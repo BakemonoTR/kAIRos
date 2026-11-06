@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BeatCam — Havada Parmak Piyano & Davul Stüdyosu</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Üst Başlık ve Kayıt Çubuğu -->
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-dot"></span>
+          <h1>BeatCam</h1>
+          <span class="brand-sub">10 Parmak Hava Enstrümanı</span>
+        </div>
+
+        <div class="record-controls">
+          <button id="btn-record" class="btn btn-record" disabled title="Video ve MIDI Kaydını Başlat">
+            <span class="rec-icon">●</span>
+            <span id="rec-label">Kaydet</span>
+          </button>
+          <span id="rec-timer" class="rec-timer hidden">00:00.0</span>
+
+          <label class="inline-toggle" title="Parmak noktalarını ve vuruş efektlerini videoya dahil et">
+            <input type="checkbox" id="chk-video-overlay" checked />
+            <span>Overlay Dahil</span>
+          </label>
+
+          <select id="sel-resolution" class="select-sm" title="Video Kayıt Çözünürlüğü">
+            <option value="720p">720p HD</option>
+            <option value="480p">480p SD</option>
+          </select>
+        </div>
+
+        <div class="preset-controls">
+          <button id="btn-export-preset" class="btn btn-ghost btn-sm" title="Sesleri ve ayarları JSON paketi olarak dışa aktar">
+            ⬇ Preset İndir
+          </button>
+          <button id="btn-import-preset" class="btn btn-ghost btn-sm" title="Preset JSON dosyası yükle">
+            ⬆ Preset Yükle
+          </button>
+          <input type="file" id="input-import-preset" accept=".json,application/json" class="hidden" />
+        </div>
+      </header>
+
+      <!-- Ana Gövde: Sol Kamera + Sağ 10 Parmak Paneli -->
+      <main class="workspace">
+        <section class="stage-panel">
+          <div class="video-stage" id="video-stage">
+            <video id="webcam" playsinline muted></video>
+            <canvas id="overlay-canvas"></canvas>
+
+            <!-- Başlangıç Ekranı -->
+            <div id="start-overlay" class="stage-overlay">
+              <div class="overlay-card">
+                <h2>Kameranı Aç &amp; Havada Çalmaya Başla</h2>
+                <p>
+                  Ellerini kameraya göster, parmaklarını havada piyano çalar gibi aşağı vur.
+                  Sağ paneldeki noktalara tıklayarak her parmağa kendi one-shot sesini yükle veya
+                  <strong>🎲 Synth</strong> ile üret!
+                </p>
+                <p class="hint-text">
+                  İpucu: İyi önden aydınlatma kullan. Test için klavyede <code>A S D F G H J K L ;</code> tuşlarına basabilirsin.
+                </p>
+                <button id="btn-start-hero" class="btn btn-primary btn-lg">
+                  🎥 Kamerayı ve Ses Motorunu Başlat
+                </button>
+              </div>
+            </div>
+
+            <!-- Kalibrasyon / Geri Sayım Katmanı -->
+            <div id="countdown-banner" class="countdown-banner hidden">
+              <div id="countdown-title" class="countdown-title">Kalibrasyon</div>
+              <div id="countdown-number" class="countdown-number">3</div>
+              <div id="countdown-desc" class="countdown-desc">Ellerini kamerada rahat ve açık tut...</div>
+            </div>
+
+            <!-- Durum & FPS Rozeti -->
+            <div class="stage-hud">
+              <span id="hud-fps" class="hud-badge">FPS: --</span>
+              <span id="hud-hands" class="hud-badge">Eller: 0</span>
+              <span id="hud-status" class="hud-status">Hazır</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sağ Panel: 10 Parmak Slotları ve MIDI Eşleme -->
+        <aside class="finger-sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title-row">
+              <h2>Parmak Slotları</h2>
+              <div class="active-count-box">
+                <label for="sel-active-fingers">Aktif:</label>
+                <select id="sel-active-fingers" class="select-sm"></select>
+              </div>
+            </div>
+
+            <div class="midi-toolbar">
+              <label>
+                MIDI Modu:
+                <select id="sel-midi-mode" class="select-sm">
+                  <option value="drum">GM Davul (Kn.10)</option>
+                  <option value="melodic">Melodik (Pentatonik)</option>
+                  <option value="custom">Özel</option>
+                </select>
+              </label>
+
+              <label>
+                Quantize:
+                <select id="sel-quantize" class="select-sm">
+                  <option value="off">Kapalı</option>
+                  <option value="1/8">1/8</option>
+                  <option value="1/16">1/16</option>
+                </select>
+              </label>
+
+              <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Tüm synth slotlarını yeniden üret">
+                🎲 Tümünü Üret
+              </button>
+            </div>
+          </div>
+
+          <div id="finger-slots-list" class="slots-list"></div>
+        </aside>
+      </main>
+
+      <!-- Alt Kontrol Çubuğu -->
+      <footer class="bottombar">
+        <div class="control-group">
+          <button id="btn-toggle-cam" class="btn btn-primary">Başlat</button>
+          <button id="btn-calibrate" class="btn btn-secondary" disabled title="3 saniye eller rahatken dinlenme açısını kaydet">
+            🎯 Kalibre Et
+          </button>
+        </div>
+
+        <div class="control-group sliders-group">
+          <label class="slider-label">
+            <span>Hassasiyet <strong id="val-sensitivity">1.00x</strong></span>
+            <input type="range" id="rng-sensitivity" min="0.4" max="2.0" step="0.05" value="1.0" />
+          </label>
+
+          <label class="slider-label">
+            <span>Hız Eşiği <strong id="val-velocity">1.35</strong></span>
+            <input type="range" id="rng-velocity" min="0.5" max="3.0" step="0.05" value="1.35" />
+          </label>
+
+          <label class="slider-label">
+            <span>Ses <strong id="val-volume">85%</strong></span>
+            <input type="range" id="rng-volume" min="0" max="1" step="0.01" value="0.85" />
+          </label>
+        </div>
+
+        <div class="control-group toggles-group">
+          <label class="inline-toggle" title="Aynı elde aynı karede birden fazla parmak tetiklenirse yalnızca en hızlı vuran parmağı çal">
+            <input type="checkbox" id="chk-sympathy" checked />
+            <span>Sempati Bastırma</span>
+          </label>
+
+          <label class="inline-toggle" title="Harici DAW için canlı Web MIDI çıkışı gönder">
+            <input type="checkbox" id="chk-live-midi" />
+            <span>Canlı MIDI</span>
+          </label>
+
+          <select id="sel-midi-out" class="select-sm" disabled title="Web MIDI Çıkış Portu">
+            <option value="">MIDI Port Yok</option>
+          </select>
+        </div>
+      </footer>
+
+      <!-- Kayıt Sonrası Önizleme ve İndirme Modalı -->
+      <div id="record-modal" class="modal-backdrop hidden">
+        <div class="modal-box">
+          <div class="modal-header">
+            <h3>🎬 Kayıt Tamamlandı</h3>
+            <button id="btn-close-modal" class="btn btn-ghost btn-sm">✕</button>
+          </div>
+          <div class="modal-body">
+            <video id="preview-video" controls playsinline></video>
+            <div class="modal-meta">
+              <span id="modal-info-duration">Süre: 0.0 sn</span>
+              <span id="modal-info-notes">Kaydedilen Nota: 0</span>
+              <label>
+                BPM:
+                <input type="number" id="inp-midi-bpm" min="40" max="240" value="120" class="input-sm" />
+              </label>
+              <label>
+                Quantize:
+                <select id="sel-modal-quantize" class="select-sm">
+                  <option value="off">Kapalı</option>
+                  <option value="1/8">1/8</option>
+                  <option value="1/16">1/16</option>
+                </select>
+              </label>
+              <label class="inline-toggle">
+                <input type="checkbox" id="chk-multitrack" checked />
+                <span>Ayrı Track'ler</span>
+              </label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="btn-dl-video" class="btn btn-secondary">⬇ Videoyu İndir</button>
+            <button id="btn-dl-midi" class="btn btn-secondary">🎹 MIDI İndir (.mid)</button>
+            <button id="btn-dl-both" class="btn btn-primary">✨ İkisini de İndir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
