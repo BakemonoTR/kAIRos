@@ -1,4 +1,4 @@
-﻿import {
+import {
   FINGER_METAS,
   MidiMapMode,
   QuantizeMode,
@@ -305,7 +305,7 @@ async function bootstrap(): Promise<void> {
       store.emit('statusMessage', 'CanlÄ± takip aktif');
 
       lastFrameMs = performance.now();
-      camera.startFrameLoop((nowMs, video, frameMs) => {
+      camera.startFrameLoop((nowMs, video) => {
         // FPS calculation
         const dt = nowMs - lastFrameMs;
         lastFrameMs = nowMs;
@@ -316,13 +316,13 @@ async function bootstrap(): Promise<void> {
         }
 
         const mpResult = handTracker.detect(video, nowMs);
-        const mapped = fingerMapper.map(mpResult, frameMs);
+        const mapped = fingerMapper.map(mpResult, nowMs);
         hudHands.textContent = `Eller: ${mapped.rawHands.length}`;
 
         const slots = store.getSlots();
         const settings = store.getSettings();
 
-        const { taps, releases } = tapDetector.process(mapped, slots, settings, frameMs);
+        const { taps, releases } = tapDetector.process(mapped, slots, settings, nowMs);
         for (const tap of taps) {
           store.emit('noteOn', { ...tap, timestampMs: nowMs });
         }

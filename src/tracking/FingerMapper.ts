@@ -13,13 +13,6 @@ function dist2D(a: Point3D, b: Point3D): number {
   return Math.hypot(dx, dy);
 }
 
-function dist3D(a: Point3D, b: Point3D): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  const dz = a.z - b.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
 /**
  * Returns normalized flexion (0 = straight, ~1 = 90 deg bent, ~2 = folded)
  * from 3 sequential joints (mcp -> pip -> tip).
@@ -63,6 +56,39 @@ function palmCenter(lms: Point3D[]): Point3D {
   return { x: x / ids.length, y: y / ids.length, z: z / ids.length };
 }
 
+/**
+ * Anatomical chirality detection in mirrored screen coordinates.
+ * In mirrored view:
+ * - User's Right Hand: Pinky is to the right of Index (pinkyMcp.x > indexMcp.x),
+ *   and Thumb is to the left of Pinky (thumbTip.x < pinkyMcp.x).
+ * - User's Left Hand: Pinky is to the left of Index (pinkyMcp.x < indexMcp.x),
+ *   and Thumb is to the right of Pinky (thumbTip.x > pinkyMcp.x).
+ * This geometric relationship holds true in both dorsal (palm down/piano pose)
+ * and palmar (palm facing camera) playing styles.
+ */
+function determineHandChirality(landmarks: Point3D[]): 'L' | 'R' | null {
+  const wrist = landmarks[0];
+  const indexMcp = landmarks[5];
+  const middleMcp = landmarks[9];
+  const pinkyMcp = landmarks[17];
+  const thumbTip = landmarks[4];
+
+  const palmScale = Math.max(0.04, dist2D(wrist, middleMcp));
+  const knuckleDeltaX = (pinkyMcp.x - indexMcp.x) / palmScale;
+  const thumbDeltaX = (thumbTip.x - pinkyMcp.x) / palmScale;
+
+  let score = 0;
+  if (knuckleDeltaX > 0.12) score += 2;
+  else if (knuckleDeltaX < -0.12) score -= 2;
+
+  if (thumbDeltaX < -0.15) score += 1;
+  else if (thumbDeltaX > 0.15) score -= 1;
+
+  if (score >= 2) return 'R';
+  if (score <= -2) return 'L';
+  return null;
+}
+
 export class FingerMapper {
   private tracks: { L: HandTrack | null; R: HandTrack | null } = { L: null, R: null };
   // Smoothed probability that a lone visible hand is the user's RIGHT hand
@@ -79,9 +105,10 @@ export class FingerMapper {
     const fingers = new Map<FingerId, MappedFinger>();
     const rawHands: MappedHandsResult['rawHands'] = [];
 
+    const handednessArray = result?.handedness ?? result?.handednesses;
     const detected = (result?.landmarks ?? []).map((lms, idx) => {
       const mirrored: Point3D[] = lms.map((p) => ({ x: 1 - p.x, y: p.y, z: p.z }));
-      const cat = result?.handednesses?.[idx]?.[0];
+      const cat = handednessArray?.[idx]?.[0];
       // Unmirrored input → MediaPipe's label is inverted relative to the user
       const rawRight = cat?.categoryName === 'Left' ? 1 : 0;
       const score = cat?.score ?? 0.5;
@@ -92,7 +119,7 @@ export class FingerMapper {
     const assigned: { L: Point3D[] | null; R: Point3D[] | null } = { L: null, R: null };
 
     if (detected.length >= 2) {
-      // Two hands: screen position is by far the most reliable cue (hands rarely cross on a keyboard)
+      // Two hands: screen position is the most reliable cue (hands rarely cross on a keyboard)
       const sorted = [...detected].sort((a, b) => a.center.x - b.center.x);
       assigned.L = sorted[0].landmarks;
       assigned.R = sorted[sorted.length - 1].landmarks;
@@ -104,30 +131,47 @@ export class FingerMapper {
         this.loneRightProb * (1 - HANDEDNESS_EMA) + d.rightProb * HANDEDNESS_EMA;
 
       let label: 'L' | 'R' | null = null;
+      const MAX_CONTINUITY_JUMP = 0.25;
 
-      // 1) Continuity with recently tracked hands
-      const dist = (t: HandTrack | null) =>
-        t && nowMs - t.lastSeenMs < CONTINUITY_MS
-          ? Math.hypot(t.center.x - d.center.x, t.center.y - d.center.y)
+      // 1) Spatial continuity with recently tracked hands
+      const distL =
+        this.tracks.L && nowMs - this.tracks.L.lastSeenMs < CONTINUITY_MS
+          ? Math.hypot(this.tracks.L.center.x - d.center.x, this.tracks.L.center.y - d.center.y)
           : Infinity;
-      const dL = dist(this.tracks.L);
-      const dR = dist(this.tracks.R);
-      if (dL !== Infinity || dR !== Infinity) {
-        if (dL < dR * 0.6) label = 'L';
-        else if (dR < dL * 0.6) label = 'R';
+      const distR =
+        this.tracks.R && nowMs - this.tracks.R.lastSeenMs < CONTINUITY_MS
+          ? Math.hypot(this.tracks.R.center.x - d.center.x, this.tracks.R.center.y - d.center.y)
+          : Infinity;
+
+      if (distL < MAX_CONTINUITY_JUMP && distR < MAX_CONTINUITY_JUMP) {
+        if (distL < distR * 0.75) label = 'L';
+        else if (distR < distL * 0.75) label = 'R';
+      } else if (distL < MAX_CONTINUITY_JUMP && distR === Infinity) {
+        label = 'L';
+      } else if (distR < MAX_CONTINUITY_JUMP && distL === Infinity) {
+        label = 'R';
       }
 
-      // 2) Keep previous lone label unless the smoothed handedness clearly disagrees (hysteresis)
-      if (!label && this.loneLabel) {
-        if (this.loneLabel === 'R' && this.loneRightProb < 0.25) label = 'L';
-        else if (this.loneLabel === 'L' && this.loneRightProb > 0.75) label = 'R';
-        else label = this.loneLabel;
-      }
-
-      // 3) Fresh hand: smoothed handedness, then screen side as tie-breaker
+      // 2) Anatomical chirality check (invariant under piano and upright poses)
       if (!label) {
-        if (this.loneRightProb > 0.62) label = 'R';
-        else if (this.loneRightProb < 0.38) label = 'L';
+        const anatomy = determineHandChirality(d.landmarks);
+        if (anatomy) {
+          label = anatomy;
+        }
+      }
+
+      // 3) Keep previous lone label if consistent with position
+      if (!label && this.loneLabel) {
+        const expectedSide = this.loneLabel === 'L' ? d.center.x < 0.6 : d.center.x > 0.4;
+        if (expectedSide) {
+          label = this.loneLabel;
+        }
+      }
+
+      // 4) Fresh hand fallback: screen side (mirrored: left half < 0.5 is Left, right half >= 0.5 is Right)
+      if (!label) {
+        if (this.loneRightProb > 0.65) label = 'R';
+        else if (this.loneRightProb < 0.35) label = 'L';
         else label = d.center.x < 0.5 ? 'L' : 'R';
       }
 
@@ -179,12 +223,13 @@ export class FingerMapper {
 
         let rawBend: number;
         if (meta.isThumb) {
-          // Thumb moves both downward (+Y) and laterally inward toward index/pinky MCP
+          // Thumb tap in air piano: downward motion (+Y) and flex at IP joint
+          // Decoupled from index/pinky MCP to prevent adjacent finger taps from triggering the thumb
           const downRatio = (tip.y - mcp.y) / handScale;
-          const inwardIndex = 1.0 - dist2D(tip, indexMcp) / handScale;
-          const inwardPinky = 1.35 - dist3D(tip, pinkyMcp) / handScale;
           const flex = computeJointFlexion(landmarks[1], mcp, tip);
-          rawBend = 0.65 * downRatio + 0.45 * inwardIndex + 0.25 * inwardPinky + 0.3 * flex;
+          const wristDist = dist2D(tip, wrist) / handScale;
+          const curlInward = Math.max(0, 0.95 - wristDist);
+          rawBend = 0.70 * downRatio + 0.45 * flex + 0.25 * curlInward;
         } else {
           // Piano strike = fingertip moves downward (+Y) relative to its MCP joint + finger curl
           const downRatio = (tip.y - mcp.y) / handScale;

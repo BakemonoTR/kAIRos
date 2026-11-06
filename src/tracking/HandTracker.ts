@@ -15,6 +15,7 @@ const CDN_MODEL_PATH =
 export class HandTracker {
   private landmarker: HandLandmarker | null = null;
   private initPromise: Promise<void> | null = null;
+  private lastTimestampMs = -1;
 
   async init(): Promise<void> {
     if (this.landmarker) return;
@@ -64,7 +65,9 @@ export class HandTracker {
   detect(video: HTMLVideoElement, timestampMs: number): HandLandmarkerResult | null {
     if (!this.landmarker) return null;
     if (video.videoWidth === 0 || video.videoHeight === 0) return null;
-    return this.landmarker.detectForVideo(video, timestampMs);
+    const safeTimestamp = timestampMs > this.lastTimestampMs ? timestampMs : this.lastTimestampMs + 1;
+    this.lastTimestampMs = safeTimestamp;
+    return this.landmarker.detectForVideo(video, safeTimestamp);
   }
 
   close(): void {
