@@ -1,5 +1,8 @@
 import {
   AppMode,
+  CustomSynthFilterType,
+  CustomSynthParams,
+  CustomSynthWaveform,
   FINGER_METAS,
   MidiMapMode,
   QuantizeMode,
@@ -79,6 +82,21 @@ async function bootstrap(): Promise<void> {
   const selThereminScale = getEl<HTMLSelectElement>('sel-theremin-scale');
   const rngThereminReverb = getEl<HTMLInputElement>('rng-theremin-reverb');
   const valThereminReverb = getEl<HTMLElement>('val-theremin-reverb');
+  const customSynthBox = getEl<HTMLElement>('custom-synth-controls');
+  const selCustomOsc1 = getEl<HTMLSelectElement>('sel-custom-osc1');
+  const selCustomOsc2 = getEl<HTMLSelectElement>('sel-custom-osc2');
+  const selCustomOctave = getEl<HTMLSelectElement>('sel-custom-octave');
+  const rngCustomDetune = getEl<HTMLInputElement>('rng-custom-detune');
+  const valCustomDetune = getEl<HTMLElement>('val-custom-detune');
+  const selCustomFilter = getEl<HTMLSelectElement>('sel-custom-filter');
+  const rngCustomQ = getEl<HTMLInputElement>('rng-custom-q');
+  const valCustomQ = getEl<HTMLElement>('val-custom-q');
+  const rngCustomVibRate = getEl<HTMLInputElement>('rng-custom-vibrate');
+  const valCustomVibRate = getEl<HTMLElement>('val-custom-vibrate');
+  const rngCustomVibDepth = getEl<HTMLInputElement>('rng-custom-vibdepth');
+  const valCustomVibDepth = getEl<HTMLElement>('val-custom-vibdepth');
+  const rngCustomGlide = getEl<HTMLInputElement>('rng-custom-glide');
+  const valCustomGlide = getEl<HTMLElement>('val-custom-glide');
   const lblSynthLayers = getEl<HTMLElement>('lbl-synth-layers');
   const btnClearSynthLoop = getEl<HTMLButtonElement>('btn-clear-synth-loop');
   const lblDrumHits = getEl<HTMLElement>('lbl-drum-hits');
@@ -219,9 +237,37 @@ async function bootstrap(): Promise<void> {
   rngThereminReverb.value = String(initSettings.thereminReverb);
   valThereminReverb.textContent = `${Math.round(initSettings.thereminReverb * 100)}%`;
   inpThereminBpm.value = String(initSettings.bpm);
+
+  function syncCustomSynthUi(cs: CustomSynthParams, preset: ThereminPreset): void {
+    customSynthBox.classList.toggle('hidden', preset !== 'custom');
+    selCustomOsc1.value = cs.osc1Wave;
+    selCustomOsc2.value = cs.osc2Wave;
+    selCustomOctave.value = String(cs.osc2Octave);
+    rngCustomDetune.value = String(cs.osc2Detune);
+    valCustomDetune.textContent = `${cs.osc2Detune} ct`;
+    selCustomFilter.value = cs.filterType;
+    rngCustomQ.value = String(cs.filterQ);
+    valCustomQ.textContent = cs.filterQ.toFixed(1);
+    rngCustomVibRate.value = String(cs.vibratoRate);
+    valCustomVibRate.textContent = `${cs.vibratoRate.toFixed(1)} Hz`;
+    rngCustomVibDepth.value = String(cs.vibratoDepth);
+    valCustomVibDepth.textContent = cs.vibratoDepth.toFixed(1);
+    rngCustomGlide.value = String(cs.glide);
+    valCustomGlide.textContent = `${Math.round(cs.glide * 1000)} ms`;
+  }
+
+  function applyCustomSynthPatch(patch: Partial<CustomSynthParams>): void {
+    ensureAllEngines();
+    const updated = theremin.setCustomParams(patch);
+    store.updateSettings({ customSynth: updated });
+    syncCustomSynthUi(updated, selThereminPreset.value as ThereminPreset);
+  }
+
+  theremin.setCustomParams(initSettings.customSynth);
   theremin.setPreset(initSettings.thereminPreset);
   theremin.setScale(initSettings.thereminScale);
   theremin.setReverbAmount(initSettings.thereminReverb);
+  syncCustomSynthUi(initSettings.customSynth, initSettings.thereminPreset);
   airLooper.setBpm(initSettings.bpm);
   metronome.setBpm(initSettings.bpm);
   refreshLooperUi();
@@ -241,6 +287,43 @@ async function bootstrap(): Promise<void> {
     const val = selThereminPreset.value as ThereminPreset;
     theremin.setPreset(val);
     store.updateSettings({ thereminPreset: val });
+    customSynthBox.classList.toggle('hidden', val !== 'custom');
+  });
+
+  selCustomOsc1.addEventListener('change', () => {
+    applyCustomSynthPatch({ osc1Wave: selCustomOsc1.value as CustomSynthWaveform });
+  });
+
+  selCustomOsc2.addEventListener('change', () => {
+    applyCustomSynthPatch({ osc2Wave: selCustomOsc2.value as CustomSynthWaveform });
+  });
+
+  selCustomOctave.addEventListener('change', () => {
+    applyCustomSynthPatch({ osc2Octave: Number(selCustomOctave.value) });
+  });
+
+  rngCustomDetune.addEventListener('input', () => {
+    applyCustomSynthPatch({ osc2Detune: Number(rngCustomDetune.value) });
+  });
+
+  selCustomFilter.addEventListener('change', () => {
+    applyCustomSynthPatch({ filterType: selCustomFilter.value as CustomSynthFilterType });
+  });
+
+  rngCustomQ.addEventListener('input', () => {
+    applyCustomSynthPatch({ filterQ: Number(rngCustomQ.value) });
+  });
+
+  rngCustomVibRate.addEventListener('input', () => {
+    applyCustomSynthPatch({ vibratoRate: Number(rngCustomVibRate.value) });
+  });
+
+  rngCustomVibDepth.addEventListener('input', () => {
+    applyCustomSynthPatch({ vibratoDepth: Number(rngCustomVibDepth.value) });
+  });
+
+  rngCustomGlide.addEventListener('input', () => {
+    applyCustomSynthPatch({ glide: Number(rngCustomGlide.value) });
   });
 
   selThereminScale.addEventListener('change', () => {
@@ -574,6 +657,7 @@ async function bootstrap(): Promise<void> {
                     const nextPreset = theremin.cycleNextPreset();
                     store.updateSettings({ thereminPreset: nextPreset.preset });
                     selThereminPreset.value = nextPreset.preset;
+                    customSynthBox.classList.toggle('hidden', nextPreset.preset !== 'custom');
                     theremin.playPresetChangeChime();
                     overlay.showToast(`Synth: ${nextPreset.name}`, '#f8fafc');
                     store.emit('statusMessage', `Synth preset: ${nextPreset.name}`);

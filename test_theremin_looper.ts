@@ -242,9 +242,9 @@ function runTests() {
   assert(nextInfo.preset !== p1Preset, `cycleNextPreset should switch preset (from ${p1Preset} to ${nextInfo.preset})`);
   assert(te.getPreset() === nextInfo.preset, 'ThereminEngine current preset should match returned preset');
 
-  // 10. Test Theremin Preset Names map all 5 presets
-  const allPresets = ['cosmic', 'cyber', 'dreampad', 'chiptune', 'cello'] as const;
-  for (let i = 0; i < 5; i++) {
+  // 10. Test Theremin Preset Names map all 6 presets (including custom)
+  const allPresets = ['cosmic', 'cyber', 'dreampad', 'chiptune', 'cello', 'custom'] as const;
+  for (let i = 0; i < 6; i++) {
     const c = te.cycleNextPreset();
     assert(allPresets.includes(c.preset), `Preset ${c.preset} should be a valid preset`);
   }
@@ -621,6 +621,28 @@ function runTests() {
       Math.round(fullFistRes.volume * 100) === 100,
       `Full fist (clench=0.85) must produce 100% volume (got ${Math.round(fullFistRes.volume * 100)}%)`
     );
+  }
+
+  // 17. Test Custom Synth Parameters
+  {
+    const teCustom = new ThereminEngine();
+    teCustom.setPreset('custom');
+    assert(teCustom.getPreset() === 'custom', 'ThereminEngine preset should be custom');
+    const updated = teCustom.setCustomParams({
+      osc1Wave: 'square',
+      osc2Wave: 'sawtooth',
+      osc2Octave: -1,
+      osc2Detune: 24,
+      filterType: 'bandpass',
+      filterQ: 8.5,
+      vibratoRate: 6.4,
+      vibratoDepth: 9.0,
+      glide: 0.06,
+    });
+    assert(updated.osc1Wave === 'square', 'Custom osc1Wave should update to square');
+    assert(updated.osc2Octave === -1, 'Custom osc2Octave should update to -1');
+    assert(updated.filterQ === 8.5, 'Custom filterQ should update to 8.5');
+    assert(teCustom.getCustomParams().osc2Detune === 24, 'getCustomParams should return updated osc2Detune');
   }
 
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);

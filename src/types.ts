@@ -15,8 +15,23 @@ export type FingerCode =
 export type SynthPresetType = 'kick' | 'snare' | 'hat' | 'pluck' | 'bell';
 
 export type AppMode = 'fingers' | 'theremin';
-export type ThereminPreset = 'cosmic' | 'cyber' | 'dreampad' | 'chiptune' | 'cello';
+export type ThereminPreset = 'cosmic' | 'cyber' | 'dreampad' | 'chiptune' | 'cello' | 'custom';
 export type ThereminScale = 'continuous' | 'pentatonic' | 'blues' | 'major' | 'chromatic';
+
+export type CustomSynthWaveform = 'sine' | 'triangle' | 'sawtooth' | 'square';
+export type CustomSynthFilterType = 'lowpass' | 'bandpass' | 'highpass';
+
+export interface CustomSynthParams {
+  osc1Wave: CustomSynthWaveform;
+  osc2Wave: CustomSynthWaveform;
+  osc2Octave: number; // -1 | 0 | 1
+  osc2Detune: number; // -50 .. 50 cents
+  filterType: CustomSynthFilterType;
+  filterQ: number; // 0.5 .. 15
+  vibratoRate: number; // 0 .. 12 Hz
+  vibratoDepth: number; // 0 .. 20 Hz
+  glide: number; // 0.005 .. 0.20 sec
+}
 
 export interface ThereminState {
   active: boolean;
@@ -168,6 +183,7 @@ export interface AppSettings {
   thereminPreset: ThereminPreset;
   thereminScale: ThereminScale;
   thereminReverb: number; // 0..1
+  customSynth: CustomSynthParams;
 }
 
 /**

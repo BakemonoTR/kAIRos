@@ -1,4 +1,4 @@
-import { ThereminPreset, ThereminScale } from '../types';
+import { CustomSynthParams, ThereminPreset, ThereminScale } from '../types';
 
 export interface ThereminNoteInfo {
   frequency: number;
@@ -6,14 +6,22 @@ export interface ThereminNoteInfo {
   midiNote: number;
 }
 
-export const THEREMIN_PRESETS: ThereminPreset[] = ['cosmic', 'cyber', 'dreampad', 'chiptune', 'cello'];
+export const THEREMIN_PRESETS: ThereminPreset[] = [
+  'cosmic',
+  'cyber',
+  'dreampad',
+  'chiptune',
+  'cello',
+  'custom',
+];
 
 export const THEREMIN_PRESET_LABELS: Record<ThereminPreset, string> = {
-  cosmic: 'Cosmic Theremin (Klasik Sine)',
-  cyber: 'Cyber Lead (Agresif Saw)',
-  dreampad: 'Dream Pad (Ambient Doku)',
-  chiptune: '8-Bit Retro (Square)',
-  cello: 'Cello Vox (Yumuşak Vokal)',
+  cosmic: 'Cosmic sine',
+  cyber: 'Cyber lead',
+  dreampad: 'Dream pad',
+  chiptune: '8-bit square',
+  cello: 'Cello vox',
+  custom: 'Custom synth',
 };
 
 const PENTATONIC_INTERVALS = [0, 3, 5, 7, 10]; // Minor Pentatonic (C, Eb, F, G, Bb)
@@ -38,6 +46,17 @@ export class ThereminEngine {
   private currentPreset: ThereminPreset = 'cosmic';
   private currentScale: ThereminScale = 'pentatonic';
   private reverbAmount = 0.65;
+  private customParams: CustomSynthParams = {
+    osc1Wave: 'sawtooth',
+    osc2Wave: 'triangle',
+    osc2Octave: 0,
+    osc2Detune: 12,
+    filterType: 'lowpass',
+    filterQ: 4.0,
+    vibratoRate: 5.0,
+    vibratoDepth: 4.5,
+    glide: 0.03,
+  };
   private active = false;
   private currentFreq = 440;
   private currentNoteName = 'A4';
@@ -140,6 +159,31 @@ export class ThereminEngine {
     this.rebuildOscillators();
   }
 
+  getCustomParams(): CustomSynthParams {
+    return { ...this.customParams };
+  }
+
+  setCustomParams(patch: Partial<CustomSynthParams>): CustomSynthParams {
+    this.customParams = { ...this.customParams, ...patch };
+    if (this.currentPreset === 'custom') {
+      if (this.ctx && this.osc1 && this.osc2 && this.lfo && this.lfoGain && this.filterNode) {
+        const now = this.ctx.currentTime;
+        this.osc1.type = this.customParams.osc1Wave;
+        this.osc2.type = this.customParams.osc2Wave;
+        this.osc2.detune.setTargetAtTime(this.customParams.osc2Detune, now, 0.02);
+        const osc2Mult = Math.pow(2, this.customParams.osc2Octave);
+        this.osc2.frequency.setTargetAtTime(this.currentFreq * osc2Mult, now, 0.02);
+        this.filterNode.type = this.customParams.filterType;
+        this.filterNode.Q.setTargetAtTime(this.customParams.filterQ, now, 0.02);
+        this.lfo.frequency.setTargetAtTime(this.customParams.vibratoRate, now, 0.02);
+        this.lfoGain.gain.setTargetAtTime(this.customParams.vibratoDepth, now, 0.02);
+      } else {
+        this.rebuildOscillators();
+      }
+    }
+    return { ...this.customParams };
+  }
+
   setScale(scale: ThereminScale): void {
     this.currentScale = scale;
   }
@@ -222,14 +266,25 @@ export class ThereminEngine {
         this.filterNode!.type = 'bandpass';
         this.filterNode!.Q.setValueAtTime(2.5, now);
         break;
+
+      case 'custom': // User-configured Custom Synth
+        this.osc1.type = this.customParams.osc1Wave;
+        this.osc2.type = this.customParams.osc2Wave;
+        this.osc2.detune.setValueAtTime(this.customParams.osc2Detune, now);
+        this.lfo.frequency.setValueAtTime(this.customParams.vibratoRate, now);
+        this.lfoGain.gain.setValueAtTime(this.customParams.vibratoDepth, now);
+        this.filterNode!.type = this.customParams.filterType;
+        this.filterNode!.Q.setValueAtTime(this.customParams.filterQ, now);
+        break;
     }
 
     // Connect LFO vibrato to osc1 frequency
     this.lfo.connect(this.lfoGain);
     this.lfoGain.connect(this.osc1.frequency);
 
+    const osc2Mult = this.currentPreset === 'custom' ? Math.pow(2, this.customParams.osc2Octave) : 1;
     this.osc1.frequency.setValueAtTime(this.currentFreq, now);
-    this.osc2.frequency.setValueAtTime(this.currentFreq, now);
+    this.osc2.frequency.setValueAtTime(this.currentFreq * osc2Mult, now);
 
     this.osc1.connect(this.vcaGain);
     this.osc2.connect(this.vcaGain);
@@ -349,10 +404,16 @@ export class ThereminEngine {
     this.filterNode.frequency.setTargetAtTime(cutoffFreq, now, 0.03);
 
     // Pitch smooth portamento
-    const portamentoTime = this.currentScale === 'continuous' ? 0.04 : 0.025;
+    const portamentoTime =
+      this.currentPreset === 'custom'
+        ? this.customParams.glide
+        : this.currentScale === 'continuous'
+          ? 0.04
+          : 0.025;
     if (this.osc1 && this.osc2) {
+      const osc2Mult = this.currentPreset === 'custom' ? Math.pow(2, this.customParams.osc2Octave) : 1;
       this.osc1.frequency.setTargetAtTime(pitchInfo.frequency, now, portamentoTime);
-      this.osc2.frequency.setTargetAtTime(pitchInfo.frequency, now, portamentoTime);
+      this.osc2.frequency.setTargetAtTime(pitchInfo.frequency * osc2Mult, now, portamentoTime);
     }
 
     if (isPlaying) {

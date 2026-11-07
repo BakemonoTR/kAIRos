@@ -47,15 +47,34 @@ const DEFAULT_SETTINGS: AppSettings = {
   thereminPreset: 'cosmic',
   thereminScale: 'pentatonic',
   thereminReverb: 0.65,
+  customSynth: {
+    osc1Wave: 'sawtooth',
+    osc2Wave: 'triangle',
+    osc2Octave: 0,
+    osc2Detune: 12,
+    filterType: 'lowpass',
+    filterQ: 4.0,
+    vibratoRate: 5.0,
+    vibratoDepth: 4.5,
+    glide: 0.03,
+  },
 };
 
 function loadInitialSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (!raw) return { ...DEFAULT_SETTINGS, customSynth: { ...DEFAULT_SETTINGS.customSynth } };
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      customSynth: {
+        ...DEFAULT_SETTINGS.customSynth,
+        ...(parsed.customSynth || {}),
+      },
+    };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, customSynth: { ...DEFAULT_SETTINGS.customSynth } };
   }
 }
 

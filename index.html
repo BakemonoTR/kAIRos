@@ -153,8 +153,91 @@
                   <option value="dreampad">Dream pad</option>
                   <option value="chiptune">8-bit square</option>
                   <option value="cello">Cello vox</option>
+                  <option value="custom">Custom synth</option>
                 </select>
               </label>
+
+              <div id="custom-synth-controls" class="custom-synth-box hidden">
+                <div class="custom-synth-header">Custom synth parameters</div>
+
+                <label class="theremin-field">
+                  <span>Osc 1 wave</span>
+                  <select id="sel-custom-osc1" class="select-sm">
+                    <option value="sine">Sine</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="sawtooth">Sawtooth</option>
+                    <option value="square">Square</option>
+                  </select>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Osc 2 wave</span>
+                  <select id="sel-custom-osc2" class="select-sm">
+                    <option value="sine">Sine</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="sawtooth">Sawtooth</option>
+                    <option value="square">Square</option>
+                  </select>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Osc 2 octave</span>
+                  <select id="sel-custom-octave" class="select-sm">
+                    <option value="-1">-1 oct (Sub)</option>
+                    <option value="0">0 oct (Unison)</option>
+                    <option value="1">+1 oct (High)</option>
+                  </select>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Detune</span>
+                  <div class="field-slider-wrap">
+                    <input type="range" id="rng-custom-detune" min="-50" max="50" step="1" value="12" />
+                    <strong id="val-custom-detune">12 ct</strong>
+                  </div>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Filter mode</span>
+                  <select id="sel-custom-filter" class="select-sm">
+                    <option value="lowpass">Lowpass</option>
+                    <option value="bandpass">Bandpass</option>
+                    <option value="highpass">Highpass</option>
+                  </select>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Resonance (Q)</span>
+                  <div class="field-slider-wrap">
+                    <input type="range" id="rng-custom-q" min="0.5" max="15" step="0.5" value="4" />
+                    <strong id="val-custom-q">4.0</strong>
+                  </div>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Vibrato rate</span>
+                  <div class="field-slider-wrap">
+                    <input type="range" id="rng-custom-vibrate" min="0" max="12" step="0.2" value="5" />
+                    <strong id="val-custom-vibrate">5.0 Hz</strong>
+                  </div>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Vibrato depth</span>
+                  <div class="field-slider-wrap">
+                    <input type="range" id="rng-custom-vibdepth" min="0" max="20" step="0.5" value="4.5" />
+                    <strong id="val-custom-vibdepth">4.5</strong>
+                  </div>
+                </label>
+
+                <label class="theremin-field">
+                  <span>Glide</span>
+                  <div class="field-slider-wrap">
+                    <input type="range" id="rng-custom-glide" min="0.005" max="0.2" step="0.005" value="0.03" />
+                    <strong id="val-custom-glide">30 ms</strong>
+                  </div>
+                </label>
+              </div>
 
               <label class="theremin-field">
                 <span>Scale</span>

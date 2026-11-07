@@ -543,8 +543,26 @@ body {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
-  min-width: 34px;
+  min-width: 44px;
   text-align: right;
+}
+
+.custom-synth-box {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: 6px;
+  background: var(--surface-control);
+  border: 1px solid var(--border-subtle);
+}
+
+.custom-synth-header {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .looper-row {
