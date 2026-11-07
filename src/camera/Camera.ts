@@ -1,4 +1,4 @@
-﻿export type VideoFrameHandler = (nowMs: number, video: HTMLVideoElement, frameMs: number) => void;
+export type VideoFrameHandler = (nowMs: number, video: HTMLVideoElement, frameMs: number) => void;
 
 type VideoWithRVFC = HTMLVideoElement & {
   requestVideoFrameCallback?: (
@@ -80,25 +80,39 @@ export class Camera {
       let lastFrameMs = -1;
       const tick = (now: DOMHighResTimeStamp, metadata: unknown) => {
         if (!this.running) return;
-        if (this.video.readyState >= 2) {
-          // Real capture time of the frame (less jitter than callback time)
-          const media = (metadata as { mediaTime?: number } | undefined)?.mediaTime;
-          let frameMs = typeof media === 'number' && media > 0 ? media * 1000 : now;
-          if (frameMs <= lastFrameMs) frameMs = lastFrameMs + 1;
-          lastFrameMs = frameMs;
-          onFrame(now, this.video, frameMs);
+        try {
+          if (this.video.readyState >= 2) {
+            // Real capture time of the frame (less jitter than callback time)
+            const media = (metadata as { mediaTime?: number } | undefined)?.mediaTime;
+            let frameMs = typeof media === 'number' && media > 0 ? media * 1000 : now;
+            if (frameMs <= lastFrameMs) frameMs = lastFrameMs + 1;
+            lastFrameMs = frameMs;
+            onFrame(now, this.video, frameMs);
+          }
+        } catch (err) {
+          console.error('Kamera kare işleme hatası:', err);
+        } finally {
+          if (this.running) {
+            this.rvfcHandle = this.video.requestVideoFrameCallback!(tick);
+          }
         }
-        this.rvfcHandle = this.video.requestVideoFrameCallback!(tick);
       };
       this.rvfcHandle = this.video.requestVideoFrameCallback(tick);
     } else {
       const tick = (now: DOMHighResTimeStamp) => {
         if (!this.running) return;
-        if (this.video.readyState >= 2 && this.video.currentTime !== this.lastVideoTime) {
-          this.lastVideoTime = this.video.currentTime;
-          onFrame(now, this.video, now);
+        try {
+          if (this.video.readyState >= 2 && this.video.currentTime !== this.lastVideoTime) {
+            this.lastVideoTime = this.video.currentTime;
+            onFrame(now, this.video, now);
+          }
+        } catch (err) {
+          console.error('Kamera kare işleme hatası (RAF):', err);
+        } finally {
+          if (this.running) {
+            this.rafHandle = requestAnimationFrame(tick);
+          }
         }
-        this.rafHandle = requestAnimationFrame(tick);
       };
       this.rafHandle = requestAnimationFrame(tick);
     }
