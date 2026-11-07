@@ -13,7 +13,16 @@
         <div class="brand">
           <span class="brand-dot"></span>
           <h1>BeatCam</h1>
-          <span class="brand-sub">10 Parmak Hava Enstrümanı</span>
+          <span class="brand-sub">10 Parmak &amp; Theremin</span>
+        </div>
+
+        <div class="mode-switch-group">
+          <button id="btn-mode-fingers" class="btn-mode active" title="10 Parmak Hava Piyanosu &amp; Davul">
+            🎹 Parmak Modu
+          </button>
+          <button id="btn-mode-theremin" class="btn-mode" title="Theremin Synth &amp; Hava Looper Modu">
+            🚀 Theremin &amp; Looper
+          </button>
         </div>
 
         <div class="record-controls">
@@ -86,43 +95,129 @@
           </div>
         </section>
 
-        <!-- Sağ Panel: 10 Parmak Slotları ve MIDI Eşleme -->
+        <!-- Sağ Panel: 10 Parmak Slotları veya Theremin & Looper Paneli -->
         <aside class="finger-sidebar">
-          <div class="sidebar-header">
-            <div class="sidebar-title-row">
-              <h2>Parmak Slotları</h2>
-              <div class="active-count-box">
-                <label for="sel-active-fingers">Aktif:</label>
-                <select id="sel-active-fingers" class="select-sm"></select>
+          <!-- Mod 1: 10 Parmak Paneli -->
+          <div id="panel-fingers-mode" class="fingers-container">
+            <div class="sidebar-header">
+              <div class="sidebar-title-row">
+                <h2>Parmak Slotları</h2>
+                <div class="active-count-box">
+                  <label for="sel-active-fingers">Aktif:</label>
+                  <select id="sel-active-fingers" class="select-sm"></select>
+                </div>
+              </div>
+
+              <div class="midi-toolbar">
+                <label>
+                  MIDI Modu:
+                  <select id="sel-midi-mode" class="select-sm">
+                    <option value="drum">GM Davul (Kn.10)</option>
+                    <option value="melodic">Melodik (Pentatonik)</option>
+                    <option value="custom">Özel</option>
+                  </select>
+                </label>
+
+                <label>
+                  Quantize:
+                  <select id="sel-quantize" class="select-sm">
+                    <option value="off">Kapalı</option>
+                    <option value="1/8">1/8</option>
+                    <option value="1/16">1/16</option>
+                  </select>
+                </label>
+
+                <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Tüm synth slotlarını yeniden üret">
+                  🎲 Tümünü Üret
+                </button>
               </div>
             </div>
 
-            <div class="midi-toolbar">
-              <label>
-                MIDI Modu:
-                <select id="sel-midi-mode" class="select-sm">
-                  <option value="drum">GM Davul (Kn.10)</option>
-                  <option value="melodic">Melodik (Pentatonik)</option>
-                  <option value="custom">Özel</option>
-                </select>
-              </label>
-
-              <label>
-                Quantize:
-                <select id="sel-quantize" class="select-sm">
-                  <option value="off">Kapalı</option>
-                  <option value="1/8">1/8</option>
-                  <option value="1/16">1/16</option>
-                </select>
-              </label>
-
-              <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Tüm synth slotlarını yeniden üret">
-                🎲 Tümünü Üret
-              </button>
-            </div>
+            <div id="finger-slots-list" class="slots-list"></div>
           </div>
 
-          <div id="finger-slots-list" class="slots-list"></div>
+          <!-- Mod 2: Theremin & Air Looper Paneli -->
+          <div id="panel-theremin-mode" class="theremin-sidebar-panel hidden">
+            <div class="theremin-header">
+              <div class="theremin-title-badge">🚀 Theremin &amp; Air Looper</div>
+              <p class="theremin-desc">
+                Sağ elinle havada Theremin synth çal, sol elinle davul ritmi tut. Swipelayarak döngüye al ve katmanla!
+              </p>
+            </div>
+
+            <div class="theremin-section">
+              <div class="section-title">🎹 Synth Ayarları (Sağ El)</div>
+              
+              <label class="theremin-field">
+                <span>Synth Tonu:</span>
+                <select id="sel-theremin-preset" class="select-sm">
+                  <option value="cosmic">🌌 Kozmik (Klasik Theremin)</option>
+                  <option value="cyber">⚡ Cyber Lead (Rezonans)</option>
+                  <option value="dreampad">☁️ Rüya Padi (Lush Ambient)</option>
+                  <option value="chiptune">👾 Retro 8-Bit (Kare Dalga)</option>
+                  <option value="cello">🎻 Çello-Vox (Pürüzsüz)</option>
+                </select>
+              </label>
+
+              <label class="theremin-field">
+                <span>Makam / Dizi (Gam):</span>
+                <select id="sel-theremin-scale" class="select-sm">
+                  <option value="pentatonic">Pentatonik (Daima Uyumlu)</option>
+                  <option value="blues">Blues Dizisi</option>
+                  <option value="major">Majör Gamı</option>
+                  <option value="chromatic">Kromatik (12 Nota)</option>
+                  <option value="continuous">Sürekli (Serbest Glissando)</option>
+                </select>
+              </label>
+
+              <label class="slider-label">
+                <span>Atmosferik Reverb: <strong id="val-theremin-reverb">65%</strong></span>
+                <input type="range" id="rng-theremin-reverb" min="0" max="1" step="0.02" value="0.65" />
+              </label>
+            </div>
+
+            <div class="theremin-section">
+              <div class="section-title">🔁 Air Looper (Döngü &amp; Overdub)</div>
+
+              <div class="looper-card synth-card">
+                <div class="looper-card-head">
+                  <span class="card-title">🎹 Synth Döngüsü</span>
+                  <span id="lbl-synth-layers" class="status-pill">0 Katman</span>
+                </div>
+                <p class="looper-card-hint">👉 <strong>Sağa Swipe:</strong> Çaldığın melodiyi döngüye alır. Tekrar çalıp swipe'layarak yeni katmanlar (overdub) ekleyebilirsin.</p>
+                <button id="btn-clear-synth-loop" class="btn btn-ghost btn-xs">🗑 Synth Döngüsünü Sıfırla</button>
+              </div>
+
+              <div class="looper-card drum-card">
+                <div class="looper-card-head">
+                  <span class="card-title">🥁 Davul Döngüsü (Sol El)</span>
+                  <span id="lbl-drum-hits" class="status-pill">0 Vuruş</span>
+                </div>
+                <p class="looper-card-hint">👈 <strong>Sola Swipe:</strong> Sol elinle vurduğun davulları döngüye alır. Yeni vuruşlar ekleyip tekrar swipe'layarak katmanla.</p>
+                <button id="btn-clear-drum-loop" class="btn btn-ghost btn-xs">🗑 Davul Döngüsünü Sıfırla</button>
+              </div>
+
+              <div class="looper-tempo-row">
+                <label>
+                  Tempo:
+                  <input type="number" id="inp-theremin-bpm" min="50" max="220" value="120" class="input-sm" /> BPM
+                </label>
+                <button id="btn-clear-all-loops" class="btn btn-ghost btn-xs">🧹 Tümünü Sıfırla</button>
+              </div>
+            </div>
+
+            <div class="theremin-gesture-guide">
+              <h4>✨ Hareket Kılavuzu</h4>
+              <ul>
+                <li><strong>✊ Yumruk Yap:</strong> Sesi açar (Yumruk sıkılaştıkça ses canlanır).</li>
+                <li><strong>↕️ Yukarı/Aşağı:</strong> Perdeyi kontrol eder. Yukarı çektikçe ses incelir.</li>
+                <li><strong>↔️ Sağ/Sol:</strong> Filtre parlaklığını açar/kapatır.</li>
+                <li><strong>🖐️ Eli Aç:</strong> Sesi keser ve arkasında uzayan atmosferik yankı bırakır.</li>
+                <li><strong>👉 Sağa Swipe:</strong> Synth melodisini sonsuz döngüye alır / overdub ekler.</li>
+                <li><strong>👈 Sola Swipe:</strong> Sol el davul vuruşlarını döngüye alır / overdub ekler.</li>
+              </ul>
+            </div>
+          </div>
         </aside>
       </main>
 

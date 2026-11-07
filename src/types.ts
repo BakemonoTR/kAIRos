@@ -14,6 +14,34 @@ export type FingerCode =
 
 export type SynthPresetType = 'kick' | 'snare' | 'hat' | 'pluck' | 'bell';
 
+export type AppMode = 'fingers' | 'theremin';
+export type ThereminPreset = 'cosmic' | 'cyber' | 'dreampad' | 'chiptune' | 'cello';
+export type ThereminScale = 'continuous' | 'pentatonic' | 'blues' | 'major' | 'chromatic';
+
+export interface ThereminState {
+  active: boolean;
+  pitchHz: number;
+  noteName: string;
+  volume: number;
+  brightness: number;
+  handX: number;
+  handY: number;
+  clenchRatio: number;
+}
+
+export interface SwipeEvent {
+  hand: 'L' | 'R';
+  direction: 'left' | 'right';
+  timestampMs: number;
+}
+
+export interface LooperStatus {
+  synthLayersCount: number;
+  synthIsPlaying: boolean;
+  drumEventsCount: number;
+  drumIsPlaying: boolean;
+}
+
 export type MidiMapMode = 'drum' | 'melodic' | 'custom';
 export type QuantizeMode = 'off' | '1/8' | '1/16';
 
@@ -105,6 +133,10 @@ export interface AppSettings {
   recordResolution: '480p' | '720p';
   liveMidiEnabled: boolean;
   selectedMidiOutputId: string;
+  appMode: AppMode;
+  thereminPreset: ThereminPreset;
+  thereminScale: ThereminScale;
+  thereminReverb: number; // 0..1
 }
 
 /**

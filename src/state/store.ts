@@ -6,6 +6,9 @@ import {
   SlotData,
   TapEvent,
   NoteOffEvent,
+  ThereminState,
+  SwipeEvent,
+  LooperStatus,
 } from '../types';
 
 type Listener<T> = (payload: T) => void;
@@ -19,6 +22,9 @@ export interface StoreEvents {
   calibrationState: { active: boolean; remainingSec: number };
   recordingState: { recording: boolean; countdown: number; elapsedSec: number };
   statusMessage: string;
+  thereminUpdate: ThereminState;
+  swipeEvent: SwipeEvent;
+  looperUpdate: LooperStatus;
 }
 
 const SETTINGS_STORAGE_KEY = 'beatcam_settings_v1';
@@ -37,6 +43,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   recordResolution: '720p',
   liveMidiEnabled: false,
   selectedMidiOutputId: '',
+  appMode: 'fingers',
+  thereminPreset: 'cosmic',
+  thereminScale: 'pentatonic',
+  thereminReverb: 0.65,
 };
 
 function loadInitialSettings(): AppSettings {

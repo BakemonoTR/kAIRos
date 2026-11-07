@@ -1,0 +1,317 @@
+import { ThereminPreset, ThereminScale } from '../types';
+
+export interface ThereminNoteInfo {
+  frequency: number;
+  noteName: string;
+  midiNote: number;
+}
+
+const PENTATONIC_INTERVALS = [0, 3, 5, 7, 10]; // Minor Pentatonic (C, Eb, F, G, Bb)
+const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const BLUES_INTERVALS = [0, 3, 5, 6, 7, 10];
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+export class ThereminEngine {
+  private ctx: AudioContext | null = null;
+  private outputNode: GainNode | null = null;
+  private wetNode: GainNode | null = null;
+  private delayNode: DelayNode | null = null;
+  private delayFeedback: GainNode | null = null;
+  private filterNode: BiquadFilterNode | null = null;
+  private vcaGain: GainNode | null = null;
+
+  private osc1: OscillatorNode | null = null;
+  private osc2: OscillatorNode | null = null;
+  private lfo: OscillatorNode | null = null;
+  private lfoGain: GainNode | null = null;
+
+  private currentPreset: ThereminPreset = 'cosmic';
+  private currentScale: ThereminScale = 'pentatonic';
+  private reverbAmount = 0.65;
+  private active = false;
+  private currentFreq = 440;
+  private currentNoteName = 'A4';
+
+  init(ctx: AudioContext, masterDestination: AudioNode): void {
+    if (this.ctx) return;
+    this.ctx = ctx;
+
+    // Main output
+    this.outputNode = ctx.createGain();
+    this.outputNode.gain.value = 0.85;
+
+    // VCA (Voltage Controlled Amplifier) for gate / envelope
+    this.vcaGain = ctx.createGain();
+    this.vcaGain.gain.setValueAtTime(0, ctx.currentTime);
+
+    // Filter
+    this.filterNode = ctx.createBiquadFilter();
+    this.filterNode.type = 'lowpass';
+    this.filterNode.frequency.setValueAtTime(2500, ctx.currentTime);
+    this.filterNode.Q.setValueAtTime(3.5, ctx.currentTime);
+
+    // Reverb / Space Delay Network for atmospheric tail
+    this.delayNode = ctx.createDelay();
+    this.delayNode.delayTime.setValueAtTime(0.32, ctx.currentTime);
+
+    this.delayFeedback = ctx.createGain();
+    this.delayFeedback.gain.setValueAtTime(0.55 * this.reverbAmount, ctx.currentTime);
+
+    const delayFilter = ctx.createBiquadFilter();
+    delayFilter.type = 'lowpass';
+    delayFilter.frequency.setValueAtTime(1800, ctx.currentTime);
+
+    this.wetNode = ctx.createGain();
+    this.wetNode.gain.setValueAtTime(this.reverbAmount * 0.75, ctx.currentTime);
+
+    // Dry chain: VCA -> Filter -> Output -> master
+    this.vcaGain.connect(this.filterNode);
+    this.filterNode.connect(this.outputNode);
+
+    // Wet chain: Filter -> Delay -> DelayFilter -> Feedback -> Delay
+    this.filterNode.connect(this.delayNode);
+    this.delayNode.connect(delayFilter);
+    delayFilter.connect(this.delayFeedback);
+    this.delayFeedback.connect(this.delayNode);
+    delayFilter.connect(this.wetNode);
+    this.wetNode.connect(this.outputNode);
+
+    this.outputNode.connect(masterDestination);
+
+    this.rebuildOscillators();
+  }
+
+  getOutputNode(): GainNode | null {
+    return this.outputNode;
+  }
+
+  setPreset(preset: ThereminPreset): void {
+    this.currentPreset = preset;
+    this.rebuildOscillators();
+  }
+
+  setScale(scale: ThereminScale): void {
+    this.currentScale = scale;
+  }
+
+  setReverbAmount(amount: number): void {
+    this.reverbAmount = Math.max(0, Math.min(1, amount));
+    if (this.delayFeedback && this.wetNode && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.delayFeedback.gain.setTargetAtTime(0.68 * this.reverbAmount, now, 0.05);
+      this.wetNode.gain.setTargetAtTime(0.85 * this.reverbAmount, now, 0.05);
+    }
+  }
+
+  private rebuildOscillators(): void {
+    if (!this.ctx || !this.vcaGain) return;
+
+    // Stop and disconnect old oscillators
+    if (this.osc1) {
+      try { this.osc1.stop(); this.osc1.disconnect(); } catch { /* ignore */ }
+    }
+    if (this.osc2) {
+      try { this.osc2.stop(); this.osc2.disconnect(); } catch { /* ignore */ }
+    }
+    if (this.lfo) {
+      try { this.lfo.stop(); this.lfo.disconnect(); } catch { /* ignore */ }
+    }
+
+    const now = this.ctx.currentTime;
+
+    this.osc1 = this.ctx.createOscillator();
+    this.osc2 = this.ctx.createOscillator();
+    this.lfo = this.ctx.createOscillator();
+    this.lfoGain = this.ctx.createGain();
+
+    switch (this.currentPreset) {
+      case 'cosmic': // Classic Theremin
+        this.osc1.type = 'sine';
+        this.osc2.type = 'sine';
+        this.lfo.frequency.setValueAtTime(5.8, now); // vibrato
+        this.lfoGain.gain.setValueAtTime(4.5, now);
+        this.filterNode!.type = 'lowpass';
+        this.filterNode!.Q.setValueAtTime(2.0, now);
+        break;
+
+      case 'cyber': // Resonant Cyber Lead
+        this.osc1.type = 'sawtooth';
+        this.osc2.type = 'sawtooth';
+        this.osc2.detune.setValueAtTime(11, now);
+        this.lfo.frequency.setValueAtTime(4.2, now);
+        this.lfoGain.gain.setValueAtTime(3.0, now);
+        this.filterNode!.type = 'lowpass';
+        this.filterNode!.Q.setValueAtTime(6.0, now);
+        break;
+
+      case 'dreampad': // Lush Ambient Pad
+        this.osc1.type = 'triangle';
+        this.osc2.type = 'sawtooth';
+        this.osc2.detune.setValueAtTime(-14, now);
+        this.lfo.frequency.setValueAtTime(3.0, now);
+        this.lfoGain.gain.setValueAtTime(6.0, now);
+        this.filterNode!.type = 'lowpass';
+        this.filterNode!.Q.setValueAtTime(1.5, now);
+        break;
+
+      case 'chiptune': // 8-Bit Retro Square
+        this.osc1.type = 'square';
+        this.osc2.type = 'square';
+        this.osc2.detune.setValueAtTime(7, now);
+        this.lfo.frequency.setValueAtTime(7.5, now);
+        this.lfoGain.gain.setValueAtTime(2.0, now);
+        this.filterNode!.type = 'lowpass';
+        this.filterNode!.Q.setValueAtTime(3.0, now);
+        break;
+
+      case 'cello': // Smooth Cello-Vox
+        this.osc1.type = 'triangle';
+        this.osc2.type = 'sawtooth';
+        this.lfo.frequency.setValueAtTime(5.2, now);
+        this.lfoGain.gain.setValueAtTime(5.5, now);
+        this.filterNode!.type = 'bandpass';
+        this.filterNode!.Q.setValueAtTime(2.5, now);
+        break;
+    }
+
+    // Connect LFO vibrato to osc1 frequency
+    this.lfo.connect(this.lfoGain);
+    this.lfoGain.connect(this.osc1.frequency);
+
+    this.osc1.frequency.setValueAtTime(this.currentFreq, now);
+    this.osc2.frequency.setValueAtTime(this.currentFreq, now);
+
+    this.osc1.connect(this.vcaGain);
+    this.osc2.connect(this.vcaGain);
+
+    this.osc1.start(now);
+    this.osc2.start(now);
+    this.lfo.start(now);
+  }
+
+  /**
+   * Quantizes a normalized Y (0 = top, 1 = bottom) to frequency & note name.
+   */
+  computePitch(handY: number): ThereminNoteInfo {
+    // Invert: top (handY ~0.15) = high pitch, bottom (handY ~0.85) = low pitch
+    const clampedY = Math.max(0.12, Math.min(0.88, handY));
+    const norm = 1 - (clampedY - 0.12) / (0.88 - 0.12); // 0 (low) .. 1 (high)
+
+    const baseMidi = 48; // C3
+    const maxMidi = 84;  // C6 (3 full octaves range)
+    const exactMidi = baseMidi + norm * (maxMidi - baseMidi);
+
+    let finalMidi = exactMidi;
+
+    if (this.currentScale !== 'continuous') {
+      const rootMidi = 48; // C
+      const rounded = Math.round(exactMidi);
+      const semitone = (rounded - rootMidi) % 12;
+      const octave = Math.floor((rounded - rootMidi) / 12);
+
+      let allowedIntervals: number[];
+      switch (this.currentScale) {
+        case 'pentatonic':
+          allowedIntervals = PENTATONIC_INTERVALS;
+          break;
+        case 'blues':
+          allowedIntervals = BLUES_INTERVALS;
+          break;
+        case 'major':
+          allowedIntervals = MAJOR_INTERVALS;
+          break;
+        default:
+          allowedIntervals = Array.from({ length: 12 }, (_, i) => i);
+      }
+
+      // Snap to nearest allowed interval
+      let bestDist = Infinity;
+      let bestInterval = allowedIntervals[0];
+      for (const inv of allowedIntervals) {
+        const dist = Math.abs(semitone - inv);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestInterval = inv;
+        }
+      }
+      finalMidi = rootMidi + octave * 12 + bestInterval;
+    }
+
+    // MIDI to Hz formula: 440 * 2^((midi - 69) / 12)
+    const freq = 440 * Math.pow(2, (finalMidi - 69) / 12);
+
+    const roundedMidi = Math.round(finalMidi);
+    const noteOctave = Math.floor(roundedMidi / 12) - 1;
+    const noteName = `${NOTE_NAMES[((roundedMidi % 12) + 12) % 12]}${noteOctave}`;
+
+    return { frequency: freq, noteName, midiNote: roundedMidi };
+  }
+
+  /**
+   * Updates real-time theremin parameters from hand tracking.
+   * clenchRatio: 0 (hand completely open) to 1 (fist / closed hand).
+   * handX: 0 to 1 across screen.
+   * handY: 0 to 1 height on screen.
+   */
+  updateGesture(clenchRatio: number, handX: number, handY: number): {
+    active: boolean;
+    frequency: number;
+    noteName: string;
+    volume: number;
+    brightness: number;
+  } {
+    if (!this.ctx || !this.vcaGain || !this.filterNode) {
+      return { active: false, frequency: 440, noteName: 'A4', volume: 0, brightness: 2500 };
+    }
+
+    const now = this.ctx.currentTime;
+    const pitchInfo = this.computePitch(handY);
+    this.currentFreq = pitchInfo.frequency;
+    this.currentNoteName = pitchInfo.noteName;
+
+    // Cutoff frequency controlled by hand X (left = darker, right = brighter)
+    const cutoffFreq = 400 + Math.pow(Math.max(0.05, Math.min(0.95, handX)), 1.8) * 8000;
+    this.filterNode.frequency.setTargetAtTime(cutoffFreq, now, 0.03);
+
+    // Pitch smooth portamento
+    const portamentoTime = this.currentScale === 'continuous' ? 0.04 : 0.025;
+    if (this.osc1 && this.osc2) {
+      this.osc1.frequency.setTargetAtTime(pitchInfo.frequency, now, portamentoTime);
+      this.osc2.frequency.setTargetAtTime(pitchInfo.frequency, now, portamentoTime);
+    }
+
+    // Gate & Volume control from Hand Closure / Fist:
+    // User requested: "el açıkken kapatınca çalsa sağ el için"
+    // When hand closes / makes a fist (clenchRatio > 0.45): Gate ON!
+    // Open hand: Gate OFF, leaving a lush reverb / delay tail behind!
+    const isClosed = clenchRatio > 0.42;
+
+    if (isClosed) {
+      this.active = true;
+      // Volume scales dynamically with tightness of fist (0.42 -> 0.85+)
+      const normalizedVolume = Math.min(1.0, Math.max(0.2, (clenchRatio - 0.35) * 1.8));
+      this.vcaGain.gain.setTargetAtTime(normalizedVolume * 0.75, now, 0.025); // fast smooth attack
+    } else {
+      if (this.active) {
+        this.active = false;
+        // Release tail: fade out VCA over ~140ms while delay/reverb rings out
+        this.vcaGain.gain.setTargetAtTime(0, now, 0.12);
+      }
+    }
+
+    return {
+      active: this.active,
+      frequency: this.currentFreq,
+      noteName: this.currentNoteName,
+      volume: isClosed ? Math.min(1, (clenchRatio - 0.35) * 1.8) : 0,
+      brightness: cutoffFreq,
+    };
+  }
+
+  silence(): void {
+    if (this.vcaGain && this.ctx) {
+      this.active = false;
+      this.vcaGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+    }
+  }
+}

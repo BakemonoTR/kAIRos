@@ -1,4 +1,13 @@
-import { FINGER_METAS, FingerId, MappedHandsResult, SlotData } from '../types';
+import {
+  AppMode,
+  FINGER_METAS,
+  FingerId,
+  LooperStatus,
+  MappedHandsResult,
+  SlotData,
+  ThereminState,
+} from '../types';
+import { SwipeStreakPoint } from '../gesture/GestureDetector';
 
 const HAND_CONNECTIONS: Array<[number, number]> = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -28,11 +37,33 @@ export class Overlay {
   private ripples: HitRipple[] = [];
   private pressedSet = new Set<FingerId>();
 
+  // Theremin & Looper additions
+  private appMode: AppMode = 'fingers';
+  private thereminState: ThereminState | null = null;
+  private streakPoints: SwipeStreakPoint[] = [];
+  private looperStatus: LooperStatus | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context alınamadı.');
     this.ctx = ctx;
+  }
+
+  setAppMode(mode: AppMode): void {
+    this.appMode = mode;
+  }
+
+  setThereminState(state: ThereminState | null): void {
+    this.thereminState = state;
+  }
+
+  setStreakPoints(streaks: SwipeStreakPoint[]): void {
+    this.streakPoints = streaks;
+  }
+
+  setLooperStatus(status: LooperStatus | null): void {
+    this.looperStatus = status;
   }
 
   triggerHit(fingerId: FingerId, velocity: number, nowMs = performance.now()): void {
@@ -48,9 +79,6 @@ export class Overlay {
     this.pressedSet.delete(fingerId);
   }
 
-  /**
-   * Computes exact `object-fit: contain` rectangle of the video inside the stage
-   */
   computeContainViewport(
     containerW: number,
     containerH: number,
@@ -131,9 +159,12 @@ export class Overlay {
     // 1. Subtle hand skeleton lines
     for (const handObj of mapped.rawHands) {
       const lms = handObj.landmarks;
+      const isRightHand = handObj.hand === 'R';
+      const isThereminRight = this.appMode === 'theremin' && isRightHand;
+
       ctx.save();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = isThereminRight ? 'rgba(129, 140, 248, 0.45)' : 'rgba(148, 163, 184, 0.35)';
+      ctx.lineWidth = isThereminRight ? 2.5 : 2;
       ctx.beginPath();
       for (const [a, b] of HAND_CONNECTIONS) {
         ctx.moveTo(toX(lms[a].x), toY(lms[a].y));
@@ -142,7 +173,7 @@ export class Overlay {
       ctx.stroke();
 
       // Joint micro-dots
-      ctx.fillStyle = 'rgba(226, 232, 240, 0.45)';
+      ctx.fillStyle = isThereminRight ? 'rgba(165, 180, 252, 0.6)' : 'rgba(226, 232, 240, 0.45)';
       for (let i = 0; i < lms.length; i++) {
         if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
         ctx.beginPath();
@@ -154,6 +185,11 @@ export class Overlay {
 
     // 2. Fingertip colored dots + labels + hit ripples
     for (const [fingerId, fData] of mapped.fingers.entries()) {
+      // In theremin mode, right hand fingers (5..9) are controlled by fist Theremin
+      if (this.appMode === 'theremin' && fingerId >= 5) {
+        continue;
+      }
+
       const slot = slots[fingerId];
       const meta = FINGER_METAS[fingerId];
       if (!slot || !meta) continue;
@@ -186,13 +222,8 @@ export class Overlay {
       }
 
       const baseRadius = isPressed ? 13 : 9;
-      if (isPressed) {
-        ctx.shadowColor = meta.color;
-        ctx.shadowBlur = 22;
-      } else {
-        ctx.shadowColor = meta.color;
-        ctx.shadowBlur = 8;
-      }
+      ctx.shadowColor = meta.color;
+      ctx.shadowBlur = isPressed ? 22 : 8;
 
       ctx.fillStyle = meta.color;
       ctx.beginPath();
@@ -227,5 +258,213 @@ export class Overlay {
 
       ctx.restore();
     }
+
+    // 3. Theremin Mode Visuals (Right Hand Energy Orb & Pitch Axis)
+    if (this.appMode === 'theremin' && this.thereminState) {
+      this.drawThereminVisuals(ctx, vp, this.thereminState, nowMs);
+    }
+
+    // 4. Swipe Streaks & Particle Trails
+    if (this.streakPoints.length > 0) {
+      this.drawSwipeStreaks(ctx, vp);
+    }
+
+    // 5. Looper HUD Overlay (Badges & Cues)
+    if (this.appMode === 'theremin' && this.looperStatus) {
+      this.drawLooperHud(ctx, vp, this.looperStatus);
+    }
+  }
+
+  private drawThereminVisuals(
+    ctx: CanvasRenderingContext2D,
+    vp: RenderViewport,
+    tState: ThereminState,
+    nowMs: number
+  ): void {
+    const toX = (nx: number) => vp.offsetX + nx * vp.drawWidth;
+    const toY = (ny: number) => vp.offsetY + ny * vp.drawHeight;
+
+    const x = toX(tState.handX);
+    const y = toY(tState.handY);
+
+    ctx.save();
+
+    // Vertical Pitch Guide Laser
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.22)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(x, vp.offsetY);
+    ctx.lineTo(x, vp.offsetY + vp.drawHeight);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Pitch height indicator ticks
+    const tickSteps = 8;
+    ctx.fillStyle = 'rgba(165, 180, 252, 0.35)';
+    for (let i = 0; i <= tickSteps; i++) {
+      const ty = vp.offsetY + (vp.drawHeight * (0.15 + (i / tickSteps) * 0.7));
+      ctx.fillRect(x - 6, ty, 12, 1);
+    }
+
+    // Theremin Glowing Energy Orb
+    const clench = tState.clenchRatio;
+    const isPlaying = tState.active;
+
+    if (isPlaying) {
+      // Radiant energy glow
+      const orbRadius = 24 + clench * 22;
+      const grad = ctx.createRadialGradient(x, y, 4, x, y, orbRadius);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+      grad.addColorStop(0.35, 'rgba(129, 140, 248, 0.85)');
+      grad.addColorStop(0.7, 'rgba(99, 102, 241, 0.45)');
+      grad.addColorStop(1, 'rgba(79, 70, 229, 0)');
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, orbRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Rotating plasma ring
+      const rotAngle = (nowMs * 0.004) % (Math.PI * 2);
+      ctx.strokeStyle = '#a5b4fc';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#6366f1';
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.arc(x, y, orbRadius * 1.15, rotAngle, rotAngle + Math.PI * 1.4);
+      ctx.stroke();
+
+      // Outer ripple ring
+      const pulse = Math.sin(nowMs * 0.01) * 6;
+      ctx.strokeStyle = 'rgba(199, 210, 254, 0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, orbRadius * 1.35 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Holographic Note Badge
+      ctx.shadowBlur = 0;
+      const noteLabel = `🎵 ${tState.noteName} • ${Math.round(tState.pitchHz)} Hz`;
+      ctx.font = '700 13px Inter, system-ui, sans-serif';
+      const textW = ctx.measureText(noteLabel).width;
+      const bw = textW + 20;
+      const bh = 26;
+      const bx = x - bw / 2;
+      const by = y - orbRadius - 40;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(noteLabel, x, by + bh / 2);
+    } else {
+      // Reverb tail / idle ready state
+      ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 18, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Prompt to close fist
+      ctx.font = '600 11px Inter, system-ui, sans-serif';
+      const promptText = '✊ Yumruk Yap = Çal';
+      const textW = ctx.measureText(promptText).width;
+      const pw = textW + 14;
+      const ph = 20;
+      const px = x - pw / 2;
+      const py = y - 36;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, 6);
+      ctx.fill();
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(promptText, x, py + ph / 2);
+    }
+
+    ctx.restore();
+  }
+
+  private drawSwipeStreaks(ctx: CanvasRenderingContext2D, vp: RenderViewport): void {
+    const toX = (nx: number) => vp.offsetX + nx * vp.drawWidth;
+    const toY = (ny: number) => vp.offsetY + ny * vp.drawHeight;
+
+    ctx.save();
+    for (const pt of this.streakPoints) {
+      ctx.fillStyle = pt.color;
+      ctx.globalAlpha = pt.alpha * 0.85;
+      ctx.shadowColor = pt.color;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(toX(pt.x), toY(pt.y), 7 * pt.alpha, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawLooperHud(
+    ctx: CanvasRenderingContext2D,
+    vp: RenderViewport,
+    status: LooperStatus
+  ): void {
+    ctx.save();
+    const margin = 16;
+    const pillH = 32;
+
+    // Left Hand Drum Looper Badge
+    const drumText = `🥁 Sol El Davul: ${status.drumEventsCount} Vuruş ${
+      status.drumIsPlaying ? '▶ (Döngüde)' : '⏸'
+    } • (👈 Sola Swipe = Loop)`;
+    ctx.font = '600 12px Inter, system-ui, sans-serif';
+    const dW = ctx.measureText(drumText).width + 20;
+    const dX = vp.offsetX + margin;
+    const dY = vp.offsetY + vp.drawHeight - pillH - margin;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.strokeStyle = status.drumIsPlaying ? '#f43f5e' : '#64748b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(dX, dY, dW, pillH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(drumText, dX + 10, dY + pillH / 2);
+
+    // Right Hand Synth Looper Badge
+    const synthText = `🎹 Sağ El Synth: ${status.synthLayersCount} Katman ${
+      status.synthLayersCount > 0 ? '▶ (Döngüde)' : '⏸'
+    } • (👉 Sağa Swipe = Loop)`;
+    const sW = ctx.measureText(synthText).width + 20;
+    const sX = vp.offsetX + vp.drawWidth - sW - margin;
+    const sY = dY;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.strokeStyle = status.synthLayersCount > 0 ? '#818cf8' : '#64748b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(sX, sY, sW, pillH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(synthText, sX + 10, sY + pillH / 2);
+
+    ctx.restore();
   }
 }

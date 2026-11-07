@@ -1,7 +1,11 @@
 import {
+  AppMode,
   FINGER_METAS,
   MidiMapMode,
   QuantizeMode,
+  ThereminPreset,
+  ThereminScale,
+  ThereminState,
 } from './types';
 import { store } from './state/store';
 import { Camera } from './camera/Camera';
@@ -9,6 +13,9 @@ import { HandTracker } from './tracking/HandTracker';
 import { FingerMapper } from './tracking/FingerMapper';
 import { TapDetector } from './gesture/TapDetector';
 import { AudioEngine } from './audio/AudioEngine';
+import { ThereminEngine } from './audio/ThereminEngine';
+import { AirLooper } from './audio/AirLooper';
+import { GestureDetector } from './gesture/GestureDetector';
 import { SampleStore } from './audio/SampleStore';
 import { Overlay } from './ui/Overlay';
 import { FingerPanel } from './ui/FingerPanel';
@@ -50,11 +57,32 @@ async function bootstrap(): Promise<void> {
   const fingerMapper = new FingerMapper();
   const tapDetector = new TapDetector();
   const audio = new AudioEngine();
+  const theremin = new ThereminEngine();
+  const airLooper = new AirLooper();
+  const gestureDetector = new GestureDetector();
   const sampleStore = new SampleStore();
   const overlay = new Overlay(overlayCanvas);
   const videoRecorder = new VideoRecorder();
   const midiRecorder = new MidiRecorder();
   const webMidi = new WebMidiOut();
+
+  // Mode Switch UI
+  const btnModeFingers = getEl<HTMLButtonElement>('btn-mode-fingers');
+  const btnModeTheremin = getEl<HTMLButtonElement>('btn-mode-theremin');
+  const panelFingersMode = getEl<HTMLElement>('panel-fingers-mode');
+  const panelThereminMode = getEl<HTMLElement>('panel-theremin-mode');
+
+  // Theremin & Looper Sidebar Elements
+  const selThereminPreset = getEl<HTMLSelectElement>('sel-theremin-preset');
+  const selThereminScale = getEl<HTMLSelectElement>('sel-theremin-scale');
+  const rngThereminReverb = getEl<HTMLInputElement>('rng-theremin-reverb');
+  const valThereminReverb = getEl<HTMLElement>('val-theremin-reverb');
+  const lblSynthLayers = getEl<HTMLElement>('lbl-synth-layers');
+  const btnClearSynthLoop = getEl<HTMLButtonElement>('btn-clear-synth-loop');
+  const lblDrumHits = getEl<HTMLElement>('lbl-drum-hits');
+  const btnClearDrumLoop = getEl<HTMLButtonElement>('btn-clear-drum-loop');
+  const inpThereminBpm = getEl<HTMLInputElement>('inp-theremin-bpm');
+  const btnClearAllLoops = getEl<HTMLButtonElement>('btn-clear-all-loops');
 
   // UI elements
   const startOverlay = getEl<HTMLElement>('start-overlay');
@@ -135,6 +163,120 @@ async function bootstrap(): Promise<void> {
   chkVideoOverlay.checked = initSettings.includeOverlayInVideo;
   selResolution.value = initSettings.recordResolution;
   audio.setMasterVolume(initSettings.masterVolume);
+
+  function ensureAllEngines(): void {
+    audio.ensureContext();
+    const ctx = audio.getContext();
+    const master = audio.getMasterGain();
+    theremin.init(ctx, master);
+    airLooper.init(ctx, audio, master);
+    const thOut = theremin.getOutputNode();
+    const loopIn = airLooper.getRecordInputNode();
+    if (thOut && loopIn) {
+      try {
+        thOut.connect(loopIn);
+      } catch {
+        // already connected
+      }
+    }
+  }
+
+  function refreshLooperUi(): void {
+    const status = airLooper.getStatus();
+    lblSynthLayers.textContent = `${status.synthLayersCount} Katman`;
+    lblDrumHits.textContent = `${status.drumEventsCount} Vuruş`;
+    store.emit('looperUpdate', status);
+  }
+
+  function setMode(mode: AppMode): void {
+    store.updateSettings({ appMode: mode });
+    btnModeFingers.classList.toggle('active', mode === 'fingers');
+    btnModeTheremin.classList.toggle('active', mode === 'theremin');
+    panelFingersMode.classList.toggle('hidden', mode !== 'fingers');
+    panelThereminMode.classList.toggle('hidden', mode !== 'theremin');
+    overlay.setAppMode(mode);
+    if (mode === 'fingers') {
+      theremin.silence();
+      overlay.setThereminState(null);
+    }
+    store.emit(
+      'statusMessage',
+      mode === 'theremin'
+        ? '🚀 Theremin & Looper Modu Aktif (Sağ el: Theremin, Sol el: Davul)'
+        : '🎹 10 Parmak Modu Aktif'
+    );
+  }
+
+  // Hydrate initial Theremin & Looper values
+  setMode(initSettings.appMode);
+  selThereminPreset.value = initSettings.thereminPreset;
+  selThereminScale.value = initSettings.thereminScale;
+  rngThereminReverb.value = String(initSettings.thereminReverb);
+  valThereminReverb.textContent = `${Math.round(initSettings.thereminReverb * 100)}%`;
+  inpThereminBpm.value = String(initSettings.bpm);
+  theremin.setPreset(initSettings.thereminPreset);
+  theremin.setScale(initSettings.thereminScale);
+  theremin.setReverbAmount(initSettings.thereminReverb);
+  airLooper.setBpm(initSettings.bpm);
+  refreshLooperUi();
+
+  btnModeFingers.addEventListener('click', () => {
+    ensureAllEngines();
+    setMode('fingers');
+  });
+
+  btnModeTheremin.addEventListener('click', () => {
+    ensureAllEngines();
+    setMode('theremin');
+  });
+
+  selThereminPreset.addEventListener('change', () => {
+    ensureAllEngines();
+    const val = selThereminPreset.value as ThereminPreset;
+    theremin.setPreset(val);
+    store.updateSettings({ thereminPreset: val });
+  });
+
+  selThereminScale.addEventListener('change', () => {
+    ensureAllEngines();
+    const val = selThereminScale.value as ThereminScale;
+    theremin.setScale(val);
+    store.updateSettings({ thereminScale: val });
+  });
+
+  rngThereminReverb.addEventListener('input', () => {
+    ensureAllEngines();
+    const val = Number(rngThereminReverb.value);
+    valThereminReverb.textContent = `${Math.round(val * 100)}%`;
+    theremin.setReverbAmount(val);
+    store.updateSettings({ thereminReverb: val });
+  });
+
+  inpThereminBpm.addEventListener('change', () => {
+    ensureAllEngines();
+    const bpm = Math.max(50, Math.min(220, Number(inpThereminBpm.value) || 120));
+    airLooper.setBpm(bpm);
+    store.updateSettings({ bpm });
+    inpMidiBpm.value = String(bpm);
+  });
+
+  btnClearSynthLoop.addEventListener('click', () => {
+    airLooper.clearSynthLoop();
+    refreshLooperUi();
+    store.emit('statusMessage', 'Synth döngüsü temizlendi');
+  });
+
+  btnClearDrumLoop.addEventListener('click', () => {
+    airLooper.clearDrumLoop();
+    refreshLooperUi();
+    store.emit('statusMessage', 'Davul döngüsü temizlendi');
+  });
+
+  btnClearAllLoops.addEventListener('click', () => {
+    airLooper.clearAll();
+    refreshLooperUi();
+    store.emit('statusMessage', 'Tüm döngüler temizlendi');
+  });
 
   // Create right sidebar panel
   const fingerPanel = new FingerPanel(slotsContainer, store, audio, sampleStore);
@@ -217,6 +359,10 @@ async function bootstrap(): Promise<void> {
       });
     }
 
+    if (fingerId < 5) {
+      airLooper.recordDrumHit(fingerId, velocity);
+    }
+
     overlay.triggerHit(fingerId, velocity, timestampMs);
 
     const settings = store.getSettings();
@@ -295,6 +441,7 @@ async function bootstrap(): Promise<void> {
       store.emit('statusMessage', 'Kamera ve MediaPipe GPU modeli yÃ¼kleniyor...');
 
       audio.ensureContext();
+      ensureAllEngines();
       await Promise.all([camera.start(640, 480), handTracker.init()]);
 
       startOverlay.classList.add('hidden');
@@ -302,7 +449,7 @@ async function bootstrap(): Promise<void> {
       btnToggleCam.textContent = 'Durdur';
       btnCalibrate.disabled = false;
       btnRecord.disabled = false;
-      store.emit('statusMessage', 'CanlÄ± takip aktif');
+      store.emit('statusMessage', 'Canlı takip aktif');
 
       lastFrameMs = performance.now();
       camera.startFrameLoop((nowMs, video) => {
@@ -322,11 +469,88 @@ async function bootstrap(): Promise<void> {
         const slots = store.getSlots();
         const settings = store.getSettings();
 
+        // 1. AirLooper beat update
+        airLooper.update();
+
+        // 2. Gesture & Swipe detection
+        let rightHandDetected = false;
+        for (const rawHand of mapped.rawHands) {
+          const handKey = rawHand.hand;
+          const { gestureState, swipe } = gestureDetector.process(
+            handKey,
+            rawHand.landmarks,
+            nowMs
+          );
+
+          if (swipe) {
+            store.emit('swipeEvent', swipe);
+            if (swipe.hand === 'R' && swipe.direction === 'right') {
+              const res = airLooper.commitSynthLoop();
+              store.emit(
+                'statusMessage',
+                res.totalLayers > 0
+                  ? `🎹 Synth döngüye eklendi (${res.totalLayers}. Katman)`
+                  : 'Henüz synth çalınmadı'
+              );
+              refreshLooperUi();
+            } else if (swipe.hand === 'L' && swipe.direction === 'left') {
+              const res = airLooper.commitDrumLoop();
+              store.emit(
+                'statusMessage',
+                res.totalCount > 0
+                  ? `🥁 Davul döngüye alındı (${res.totalCount} Vuruş)`
+                  : 'Henüz davul çalınmadı'
+              );
+              refreshLooperUi();
+            }
+          }
+
+          if (settings.appMode === 'theremin' && rawHand.hand === 'R') {
+            rightHandDetected = true;
+            const tRes = theremin.updateGesture(
+              gestureState.clenchRatio,
+              gestureState.palmCenter.x,
+              gestureState.palmCenter.y
+            );
+            if (tRes.active) {
+              airLooper.markSynthActive();
+            }
+            const tState: ThereminState = {
+              active: tRes.active,
+              pitchHz: tRes.frequency,
+              noteName: tRes.noteName,
+              volume: tRes.volume,
+              brightness: tRes.brightness,
+              handX: gestureState.palmCenter.x,
+              handY: gestureState.palmCenter.y,
+              clenchRatio: gestureState.clenchRatio,
+            };
+            overlay.setThereminState(tState);
+            store.emit('thereminUpdate', tState);
+          }
+        }
+
+        if (settings.appMode === 'theremin' && !rightHandDetected) {
+          theremin.silence();
+          overlay.setThereminState(null);
+        }
+
+        overlay.setAppMode(settings.appMode);
+        overlay.setStreakPoints(gestureDetector.getStreakPoints(nowMs));
+        overlay.setLooperStatus(airLooper.getStatus());
+
         const { taps, releases } = tapDetector.process(mapped, slots, settings, nowMs);
         for (const tap of taps) {
+          // In theremin mode, right hand taps are ignored so right hand is exclusively Theremin
+          if (settings.appMode === 'theremin' && tap.fingerId >= 5) {
+            continue;
+          }
           store.emit('noteOn', { ...tap, timestampMs: nowMs });
         }
         for (const rel of releases) {
+          if (settings.appMode === 'theremin' && rel.fingerId >= 5) {
+            continue;
+          }
           store.emit('noteOff', rel);
         }
 
@@ -356,6 +580,8 @@ async function bootstrap(): Promise<void> {
     if (videoRecorder.isRecording()) {
       void stopRecordingAndShowModal();
     }
+    theremin.silence();
+    overlay.setThereminState(null);
     camera.stop();
     btnToggleCam.textContent = 'BaÅŸlat';
     btnCalibrate.disabled = true;

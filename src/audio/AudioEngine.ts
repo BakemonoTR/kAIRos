@@ -24,6 +24,15 @@ export class AudioEngine {
     return this.ctx;
   }
 
+  getMasterGain(): GainNode {
+    this.ensureContext();
+    return this.masterGain!;
+  }
+
+  getContext(): AudioContext {
+    return this.ensureContext();
+  }
+
   getCurrentTime(): number {
     return this.ensureContext().currentTime;
   }
