@@ -218,6 +218,7 @@ export class GestureDetector {
       if (
         this.leftWallArmed &&
         (minX <= 0.12 || palmCenter.x <= 0.16) &&
+        palmCenter.y >= 0.25 &&
         canBumpLeft
       ) {
         isLeftWallBump = true;
@@ -300,7 +301,7 @@ export class GestureDetector {
           const minLeftDist = nearLeftEdge ? -0.025 : -0.032;
           const minLeftVel = nearLeftEdge ? -0.30 : -0.38;
 
-          if (!isRight && dx <= minLeftDist && vX <= minLeftVel) {
+          if (!isRight && palmCenter.y >= 0.25 && dx <= minLeftDist && vX <= minLeftVel) {
             isLeftDrumSwipe = true;
           }
 

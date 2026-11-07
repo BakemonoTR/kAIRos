@@ -224,28 +224,29 @@ body {
 
 .stage-hud {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: 14px;
+  left: 14px;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   z-index: 5;
+  pointer-events: none;
+}
+
+.hud-mono-text {
+  font-family: 'Share Tech Mono', 'VT323', Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #4ade80;
+  letter-spacing: 0.6px;
+  text-shadow: 0 0 2px #050a06;
+  line-height: 1.25;
 }
 
 .hud-badge,
 .hud-status {
-  background: rgba(15, 23, 42, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: #e2e8f0;
-  backdrop-filter: blur(4px);
-}
-
-.hud-status {
-  color: #93c5fd;
+  display: none;
 }
 
 /* Sağ Parmak Paneli */

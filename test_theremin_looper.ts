@@ -1,6 +1,7 @@
 import { GestureDetector } from './src/gesture/GestureDetector';
 import { ThereminEngine } from './src/audio/ThereminEngine';
 import { AirLooper } from './src/audio/AirLooper';
+import { Metronome } from './src/audio/Metronome';
 import { FingerMapper } from './src/tracking/FingerMapper';
 import { Point3D } from './src/types';
 
@@ -182,6 +183,12 @@ function runTests() {
   assert(wallLRes.swipe?.hand === 'L', 'Left wall bump hand must be L');
   assert(wallLRes.swipe?.direction === 'left', 'Left wall bump direction must be left');
 
+  // 7C2. Test that Left hand reaching into Metronome Top-Left Zone (y=0.15) does NOT trigger drum wall bump
+  const gdWallLMetro = new GestureDetector();
+  gdWallLMetro.process('L', createMockHand('open', 0.35, 0.5), 3500);
+  const wallLMetroRes = gdWallLMetro.process('L', createMockHand('open', 0.10, 0.15), 3600); // top-left corner (metronome)
+  assert(wallLMetroRes.swipe === null, 'Hand in top-left metronome corner (y < 0.25) must NOT trigger drum wall bump');
+
   // 7D. Test Right Wall Bump ("Sağ Duvara Çarptırma")
   const gdWallR = new GestureDetector();
   gdWallR.process('R', createMockHand('open', 0.65, 0.5), 3700); // playing in zone
@@ -302,6 +309,42 @@ function runTests() {
   alTile.update();
   assert(scheduledHitTimes.length >= 1, 'Lookahead scheduler should schedule upcoming drum hits');
   assert(Math.abs(scheduledHitTimes[0] - 11.50) < 0.01, 'Scheduled hit time must be on master loop grid (expected 11.50)');
+
+  // 13. Test Metronome Class
+  const metro = new Metronome();
+  assert(!metro.isEnabled(), 'Metronome should initially be disabled');
+  const turnedOn = metro.toggle();
+  assert(turnedOn === true && metro.isEnabled(), 'Metronome.toggle() should turn it ON');
+  metro.setBpm(140);
+  assert(metro.getBpm() === 140, 'Metronome BPM should update to 140');
+  const turnedOff = metro.toggle();
+  assert(turnedOff === false && !metro.isEnabled(), 'Metronome.toggle() again should turn it OFF');
+
+  // 13B. Test Metronome Audio and Visual State
+  const metroCtx = {
+    currentTime: 100.0,
+    createOscillator: () => ({
+      type: '',
+      frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect() {},
+      start() {},
+      stop() {},
+    }),
+    createGain: () => ({
+      gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect() {},
+    }),
+  } as any;
+  const metroDest = {} as any;
+  metro.init(metroCtx, metroDest);
+  metro.start();
+  assert(metro.isEnabled(), 'Metronome should be started');
+  const mState = metro.update();
+  assert(mState.enabled === true, 'MetronomeState.enabled should be true');
+  assert(mState.bpm === 140, 'MetronomeState.bpm should be 140');
+  assert(mState.currentBeat >= 1 && mState.currentBeat <= 4, 'MetronomeState.currentBeat should be in [1..4]');
+  metro.stop();
+  assert(!metro.isEnabled(), 'Metronome should be stopped');
 
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }

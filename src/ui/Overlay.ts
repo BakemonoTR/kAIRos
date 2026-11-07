@@ -8,6 +8,7 @@ import {
   SlotData,
   ThereminState,
 } from '../types';
+import { MetronomeState } from '../audio/Metronome';
 import { SwipeStreakPoint } from '../gesture/GestureDetector';
 
 const HAND_CONNECTIONS: Array<[number, number]> = [
@@ -58,6 +59,8 @@ export class Overlay {
   private toast: ToastBanner | null = null;
   private wallHitLeftMs = 0;
   private wallHitRightMs = 0;
+  private metronomeState: MetronomeState | null = null;
+  private metroFlashMs = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -106,6 +109,22 @@ export class Overlay {
     } else {
       this.wallHitRightMs = nowMs;
     }
+  }
+
+  setMetronomeState(state: MetronomeState | null): void {
+    this.metronomeState = state;
+  }
+
+  triggerMetroFlash(nowMs = performance.now()): void {
+    this.metroFlashMs = nowMs;
+  }
+
+  getMetronomeBounds(vp: RenderViewport): { x: number; y: number; w: number; h: number } {
+    const w = 138;
+    const h = 48;
+    const x = vp.offsetX + 14;
+    const y = vp.offsetX >= 90 ? vp.offsetY + 14 : vp.offsetY + 52;
+    return { x, y, w, h };
   }
 
   triggerHit(fingerId: FingerId, velocity: number, nowMs = performance.now()): void {
@@ -310,6 +329,9 @@ export class Overlay {
     if (this.appMode === 'theremin') {
       this.drawRetroDigitalHud(ctx, vp, nowMs);
     }
+
+    // 5B. Metronome Interactive Widget (Sol Üst Köşe)
+    this.drawMetronomeWidget(ctx, vp, nowMs);
 
     // 6. Celebratory Toast Notification
     if (this.toast) {
@@ -563,6 +585,115 @@ export class Overlay {
         'right'
       );
     }
+  }
+
+  private drawMetronomeWidget(
+    ctx: CanvasRenderingContext2D,
+    vp: RenderViewport,
+    nowMs: number
+  ): void {
+    if (!this.metronomeState) return;
+    const m = this.metronomeState;
+    const bounds = this.getMetronomeBounds(vp);
+    const { x, y, w, h } = bounds;
+
+    const isFlashing = nowMs - this.metroFlashMs < 220;
+
+    ctx.save();
+
+    // Box background
+    ctx.fillStyle = isFlashing
+      ? 'rgba(34, 197, 94, 0.35)'
+      : m.hovered
+      ? 'rgba(10, 24, 14, 0.92)'
+      : 'rgba(5, 10, 6, 0.84)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.fill();
+
+    // Box outline
+    ctx.lineWidth = isFlashing ? 2.5 : m.hovered ? 2.0 : 1.2;
+    ctx.strokeStyle = isFlashing
+      ? '#86efac'
+      : m.hovered
+      ? '#22c55e'
+      : m.enabled
+      ? '#4ade80'
+      : 'rgba(74, 222, 128, 0.35)';
+    ctx.stroke();
+
+    // Indicator Dot
+    const dotX = x + 14;
+    const dotY = y + 16;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, m.enabled && m.isTick ? 4.5 : 3.5, 0, Math.PI * 2);
+    if (m.enabled) {
+      ctx.fillStyle = m.isDownbeat ? '#ffffff' : '#4ade80';
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.4)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    // Label: METRONOM
+    this.drawDigitalText(
+      ctx,
+      'METRONOM',
+      x + 24,
+      y + 16,
+      11,
+      m.enabled ? '#4ade80' : 'rgba(74, 222, 128, 0.6)',
+      'left'
+    );
+
+    // Status: AÇIK / KAPALI
+    const statusText = m.enabled ? 'AÇIK' : 'KAPALI';
+    const statusColor = m.enabled ? '#4ade80' : 'rgba(148, 163, 184, 0.55)';
+    this.drawDigitalText(ctx, statusText, x + w - 12, y + 16, 11, statusColor, 'right');
+
+    // Line 2: BPM + 4 Beat Dots
+    this.drawDigitalText(
+      ctx,
+      `${m.bpm} BPM`,
+      x + 14,
+      y + 34,
+      11,
+      m.enabled ? '#4ade80' : 'rgba(74, 222, 128, 0.45)',
+      'left'
+    );
+
+    // 4 Beat Dots
+    const dotsStartX = x + w - 50;
+    for (let b = 1; b <= 4; b++) {
+      const bx = dotsStartX + (b - 1) * 11;
+      const by = y + 34;
+      ctx.beginPath();
+      const isCurrent = m.enabled && m.currentBeat === b;
+      ctx.arc(bx, by, isCurrent ? 3.5 : 2.0, 0, Math.PI * 2);
+      if (isCurrent) {
+        ctx.fillStyle = b === 1 ? '#ffffff' : '#4ade80';
+        ctx.fill();
+      } else {
+        ctx.fillStyle = m.enabled ? 'rgba(74, 222, 128, 0.35)' : 'rgba(148, 163, 184, 0.25)';
+        ctx.fill();
+      }
+    }
+
+    // Hover hint under the box
+    if (m.hovered) {
+      this.drawDigitalText(
+        ctx,
+        '[DOKUN: AÇ/KAPA]',
+        x + w / 2,
+        y + h + 12,
+        10,
+        '#22c55e',
+        'center'
+      );
+    }
+
+    ctx.restore();
   }
 
   private drawToastBanner(

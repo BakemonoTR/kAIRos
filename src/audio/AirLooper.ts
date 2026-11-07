@@ -119,6 +119,18 @@ export class AirLooper {
     return this.drumIsPlaying || this.synthLayers.length > 0;
   }
 
+  getMasterLoopStartTime(): number {
+    return this.masterLoopStartTime;
+  }
+
+  getMasterLoopDuration(): number {
+    return this.masterLoopDuration;
+  }
+
+  getBpm(): number {
+    return this.bpm;
+  }
+
   /**
    * Quantizes elapsed beats in strict 2-beat increments (2, 4, 6, 8, 10, 12, 16... beats):
    * <= 2 beats -> 2 beats (half bar)

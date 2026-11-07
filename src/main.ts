@@ -15,6 +15,7 @@ import { TapDetector } from './gesture/TapDetector';
 import { AudioEngine } from './audio/AudioEngine';
 import { ThereminEngine } from './audio/ThereminEngine';
 import { AirLooper } from './audio/AirLooper';
+import { Metronome } from './audio/Metronome';
 import { GestureDetector } from './gesture/GestureDetector';
 import { SampleStore } from './audio/SampleStore';
 import { Overlay } from './ui/Overlay';
@@ -59,6 +60,7 @@ async function bootstrap(): Promise<void> {
   const audio = new AudioEngine();
   const theremin = new ThereminEngine();
   const airLooper = new AirLooper();
+  const metronome = new Metronome();
   const gestureDetector = new GestureDetector();
   const sampleStore = new SampleStore();
   const overlay = new Overlay(overlayCanvas);
@@ -98,9 +100,10 @@ async function bootstrap(): Promise<void> {
   const countdownNumber = getEl<HTMLElement>('countdown-number');
   const countdownDesc = getEl<HTMLElement>('countdown-desc');
 
+  const videoStage = getEl<HTMLElement>('video-stage');
   const hudFps = getEl<HTMLElement>('hud-fps');
   const hudHands = getEl<HTMLElement>('hud-hands');
-  const hudStatus = getEl<HTMLElement>('hud-status');
+  const hudStatus = document.getElementById('hud-status');
 
   const selActiveFingers = getEl<HTMLSelectElement>('sel-active-fingers');
   const selMidiMode = getEl<HTMLSelectElement>('sel-midi-mode');
@@ -170,6 +173,8 @@ async function bootstrap(): Promise<void> {
     const master = audio.getMasterGain();
     theremin.init(ctx, master);
     airLooper.init(ctx, audio, master);
+    metronome.init(ctx, master);
+    metronome.setBpm(airLooper.getBpm());
     const thOut = theremin.getOutputNode();
     const loopIn = airLooper.getRecordInputNode();
     if (thOut && loopIn) {
@@ -218,6 +223,7 @@ async function bootstrap(): Promise<void> {
   theremin.setScale(initSettings.thereminScale);
   theremin.setReverbAmount(initSettings.thereminReverb);
   airLooper.setBpm(initSettings.bpm);
+  metronome.setBpm(initSettings.bpm);
   refreshLooperUi();
 
   btnModeFingers.addEventListener('click', () => {
@@ -256,6 +262,7 @@ async function bootstrap(): Promise<void> {
     ensureAllEngines();
     const bpm = Math.max(50, Math.min(220, Number(inpThereminBpm.value) || 120));
     airLooper.setBpm(bpm);
+    metronome.setBpm(bpm);
     store.updateSettings({ bpm });
     inpMidiBpm.value = String(bpm);
   });
@@ -278,11 +285,38 @@ async function bootstrap(): Promise<void> {
     store.emit('statusMessage', 'Tüm döngüler temizlendi');
   });
 
+  // Metronome box click/touch handler on camera stage
+  videoStage.addEventListener('pointerdown', (e) => {
+    const rect = overlayCanvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const vp = overlay.computeContainViewport(
+      rect.width,
+      rect.height,
+      videoEl.videoWidth || 640,
+      videoEl.videoHeight || 480
+    );
+    const mb = overlay.getMetronomeBounds(vp);
+    if (
+      clickX >= mb.x &&
+      clickX <= mb.x + mb.w &&
+      clickY >= mb.y &&
+      clickY <= mb.y + mb.h
+    ) {
+      audio.ensureContext();
+      ensureAllEngines();
+      const newState = metronome.toggle();
+      overlay.triggerMetroFlash();
+      overlay.showToast(newState ? '[METRONOM: AÇIK]' : '[METRONOM: KAPALI]', '#4ade80');
+    }
+  });
+
   // Create right sidebar panel
   const fingerPanel = new FingerPanel(slotsContainer, store, audio, sampleStore);
 
   store.on('statusMessage', (msg) => {
-    hudStatus.textContent = msg;
+    if (hudStatus) hudStatus.textContent = msg;
   });
 
   store.on('settingsChanged', (s) => {
@@ -454,6 +488,8 @@ async function bootstrap(): Promise<void> {
       lastFrameMs = performance.now();
       let leftLockoutUntilMs = 0;
       let prevPalmL: { x: number; y: number } | null = null;
+      let metroZoneArmed = true;
+      let lastMetroToggleMs = 0;
 
       camera.startFrameLoop((nowMs, video) => {
         // FPS calculation
@@ -468,12 +504,56 @@ async function bootstrap(): Promise<void> {
         const settings = store.getSettings();
         const mpResult = handTracker.detect(video, nowMs);
         const mapped = fingerMapper.map(mpResult, nowMs, settings.appMode);
-        hudHands.textContent = `Eller: ${mapped.rawHands.length}`;
+        hudHands.textContent = `ELLER: ${mapped.rawHands.length}`;
 
         const slots = store.getSlots();
 
         // 1. AirLooper beat update
         airLooper.update();
+
+        // 1B. Metronome update & live state
+        const metroState = metronome.update(
+          airLooper.getMasterLoopStartTime(),
+          airLooper.getMasterLoopDuration()
+        );
+        overlay.setMetronomeState(metroState);
+
+        // 1C. Metronome Hand Hover & Gesture Trigger Check (Sol Üst Köşe)
+        let isHandInMetroZone = false;
+        let isHandNearMetroZone = false;
+
+        for (const rawHand of mapped.rawHands) {
+          const lms = rawHand.landmarks;
+          const palm = lms[9] || lms[0];
+          const tip = lms[8];
+          if (
+            (tip && tip.x <= 0.22 && tip.y <= 0.24) ||
+            (palm && palm.x <= 0.22 && palm.y <= 0.24)
+          ) {
+            isHandInMetroZone = true;
+            break;
+          }
+          if (
+            (tip && tip.x <= 0.26 && tip.y <= 0.28) ||
+            (palm && palm.x <= 0.26 && palm.y <= 0.28)
+          ) {
+            isHandNearMetroZone = true;
+          }
+        }
+
+        metronome.setHovered(isHandInMetroZone);
+
+        if (isHandInMetroZone) {
+          if (metroZoneArmed && nowMs - lastMetroToggleMs > 600) {
+            const newState = metronome.toggle();
+            lastMetroToggleMs = nowMs;
+            metroZoneArmed = false;
+            overlay.triggerMetroFlash(nowMs);
+            overlay.showToast(newState ? '[METRONOM: AÇIK]' : '[METRONOM: KAPALI]', '#4ade80');
+          }
+        } else if (!isHandNearMetroZone && nowMs - lastMetroToggleMs > 350) {
+          metroZoneArmed = true;
+        }
 
         // 2. Gesture & Swipe detection
         let rightHandDetected = false;
@@ -657,7 +737,7 @@ async function bootstrap(): Promise<void> {
     startOverlay.classList.remove('hidden');
     btnStartHero.disabled = false;
     hudFps.textContent = 'FPS: --';
-    hudHands.textContent = 'Eller: 0';
+    hudHands.textContent = 'ELLER: 0';
     store.emit('statusMessage', 'Durduruldu');
   }
 
