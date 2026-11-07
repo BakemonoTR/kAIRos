@@ -514,7 +514,7 @@ async function bootstrap(): Promise<void> {
                     store.updateSettings({ thereminPreset: nextPreset.preset });
                     selThereminPreset.value = nextPreset.preset;
                     theremin.playPresetChangeChime();
-                    overlay.showToast(`🎛️ SYNTH SESİ: ${nextPreset.name.toUpperCase()}`, '#38bdf8');
+                    overlay.showToast(`[SYNTH: ${nextPreset.name.toUpperCase()}]`, '#4ade80');
                     store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
                   }
                 } else if (swipe.direction === 'right') {
@@ -523,18 +523,17 @@ async function bootstrap(): Promise<void> {
                   theremin.silence();
                   const res = airLooper.commitSynthLoop();
                   if (res.totalLayers > 0) {
-                    const bars = Math.max(1, Math.round(res.beatsCount / 4));
                     overlay.showToast(
-                      `🔁 🎹 SYNTH: ${res.beatsCount} VURUŞLUK DÖNGÜ (${bars} ÖLÇÜ • KATMAN ${res.totalLayers})`,
-                      '#39ff14'
+                      `[SYNTH: ${res.beatsCount} VURUŞ (KATMAN ${res.totalLayers})]`,
+                      '#4ade80'
                     );
                     store.emit(
                       'statusMessage',
-                      `🎹 Synth döngüye alındı (${res.beatsCount} Vuruş • ${bars} Ölçü • ${res.durationSec.toFixed(1)} sn)`
+                      `Synth döngüye alındı (${res.beatsCount} Vuruş • Katman ${res.totalLayers})`
                     );
                   } else {
-                    overlay.showToast('ℹ️ Henüz synth çalınmadı (Yumruk yapıp melodi çal)', '#94a3b8');
-                    store.emit('statusMessage', 'Henüz synth çalınmadı (Yumruk yapıp melodi çal)');
+                    overlay.showToast('[SYNTH: HENÜZ ÇALINMADI]', '#94a3b8');
+                    store.emit('statusMessage', 'Henüz synth çalınmadı');
                   }
                   refreshLooperUi();
                 }
@@ -544,18 +543,17 @@ async function bootstrap(): Promise<void> {
                 leftLockoutUntilMs = nowMs + 280; // Lockout to prevent post-bump tap noise
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
-                  const bars = Math.max(1, Math.round(res.beatsCount / 4));
                   overlay.showToast(
-                    `🔁 🥁 DAVUL: ${res.beatsCount} VURUŞLUK DÖNGÜ (${bars} ÖLÇÜ • ${res.totalCount} NOTA)`,
-                    '#39ff14'
+                    `[DAVUL: ${res.beatsCount} VURUŞ (${res.totalCount} NOTA)]`,
+                    '#4ade80'
                   );
                   store.emit(
                     'statusMessage',
-                    `🥁 Davul döngüye alındı (${res.beatsCount} Vuruş • ${bars} Ölçü • ${res.durationSec.toFixed(1)} sn)`
+                    `Davul döngüye alındı (${res.beatsCount} Vuruş • ${res.totalCount} Nota)`
                   );
                 } else {
-                  overlay.showToast('ℹ️ Henüz davul çalınmadı (Sol el parmaklarınla vur)', '#94a3b8');
-                  store.emit('statusMessage', 'Henüz davul çalınmadı (Sol el parmaklarınla vur)');
+                  overlay.showToast('[DAVUL: HENÜZ ÇALINMADI]', '#94a3b8');
+                  store.emit('statusMessage', 'Henüz davul çalınmadı');
                 }
                 refreshLooperUi();
               }

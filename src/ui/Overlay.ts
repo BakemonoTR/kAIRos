@@ -330,27 +330,20 @@ export class Overlay {
     x: number,
     y: number,
     fontSize: number,
-    color = '#39ff14',
+    color = '#4ade80',
     align: CanvasTextAlign = 'left'
   ): void {
     ctx.save();
-    ctx.font = `700 ${fontSize}px "Share Tech Mono", "VT323", "Courier New", Consolas, monospace`;
+    ctx.font = `600 ${fontSize}px "Share Tech Mono", "VT323", Consolas, monospace`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
 
-    // Crisp high-contrast outline to pop against any background without box shapes
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    // Crisp black outline for high contrast over camera feed, zero blurry neon
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#050a06';
     ctx.strokeText(text, x, y);
 
-    // Phosphor glow
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 9;
-    ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
-
-    // Inner brightness pass
-    ctx.shadowBlur = 0;
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
 
@@ -361,7 +354,7 @@ export class Overlay {
     ctx: CanvasRenderingContext2D,
     vp: RenderViewport,
     tState: ThereminState,
-    nowMs: number
+    _nowMs: number
   ): void {
     const toX = (nx: number) => vp.offsetX + nx * vp.drawWidth;
     const toY = (ny: number) => vp.offsetY + ny * vp.drawHeight;
@@ -372,8 +365,8 @@ export class Overlay {
     ctx.save();
 
     // Vertical Pitch Guide Laser
-    ctx.strokeStyle = 'rgba(57, 255, 20, 0.35)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.25)';
+    ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
     ctx.moveTo(x, vp.offsetY);
@@ -382,21 +375,20 @@ export class Overlay {
     ctx.setLineDash([]);
 
     const tickSteps = 8;
-    ctx.fillStyle = 'rgba(57, 255, 20, 0.45)';
+    ctx.fillStyle = 'rgba(74, 222, 128, 0.35)';
     for (let i = 0; i <= tickSteps; i++) {
       const ty = vp.offsetY + (vp.drawHeight * (0.15 + (i / tickSteps) * 0.7));
-      ctx.fillRect(x - 6, ty, 12, 1);
+      ctx.fillRect(x - 4, ty, 8, 1);
     }
 
     const clench = tState.clenchRatio;
     const isPlaying = tState.active;
 
     if (isPlaying) {
-      const orbRadius = 24 + clench * 22;
+      const orbRadius = 22 + clench * 18;
       const grad = ctx.createRadialGradient(x, y, 4, x, y, orbRadius);
       grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-      grad.addColorStop(0.35, 'rgba(74, 222, 128, 0.85)');
-      grad.addColorStop(0.7, 'rgba(57, 255, 20, 0.45)');
+      grad.addColorStop(0.4, 'rgba(74, 222, 128, 0.8)');
       grad.addColorStop(1, 'rgba(34, 197, 94, 0)');
 
       ctx.fillStyle = grad;
@@ -404,33 +396,23 @@ export class Overlay {
       ctx.arc(x, y, orbRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      const rotAngle = (nowMs * 0.004) % (Math.PI * 2);
-      ctx.strokeStyle = '#39ff14';
-      ctx.lineWidth = 3;
-      ctx.shadowColor = '#39ff14';
-      ctx.shadowBlur = 18;
-      ctx.beginPath();
-      ctx.arc(x, y, orbRadius * 1.15, rotAngle, rotAngle + Math.PI * 1.4);
-      ctx.stroke();
-
-      const pulse = Math.sin(nowMs * 0.01) * 6;
-      ctx.strokeStyle = 'rgba(74, 222, 128, 0.7)';
+      ctx.strokeStyle = '#4ade80';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(x, y, orbRadius * 1.35 + pulse, 0, Math.PI * 2);
+      ctx.arc(x, y, orbRadius * 1.15, 0, Math.PI * 2);
       ctx.stroke();
 
-      const noteLabel = `[ NOTE: ${tState.noteName} • ${Math.round(tState.pitchHz)} HZ ]`;
-      this.drawDigitalText(ctx, noteLabel, x, y - orbRadius - 26, 14, '#39ff14', 'center');
+      const noteLabel = `[${tState.noteName}]`;
+      this.drawDigitalText(ctx, noteLabel, x, y - orbRadius - 18, 13, '#4ade80', 'center');
     } else {
-      ctx.strokeStyle = 'rgba(57, 255, 20, 0.4)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.35)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(x, y, 18, 0, Math.PI * 2);
+      ctx.arc(x, y, 16, 0, Math.PI * 2);
       ctx.stroke();
 
-      const promptText = '[ YUMRUK YAP = ÇAL ]';
-      this.drawDigitalText(ctx, promptText, x, y - 28, 12, '#39ff14', 'center');
+      const promptText = '[YUMRUK = ÇAL]';
+      this.drawDigitalText(ctx, promptText, x, y - 24, 12, '#4ade80', 'center');
     }
 
     ctx.restore();
@@ -443,76 +425,46 @@ export class Overlay {
     ctx.save();
     for (const pt of this.streakPoints) {
       ctx.fillStyle = pt.color;
-      ctx.globalAlpha = pt.alpha * 0.85;
-      ctx.shadowColor = pt.color;
-      ctx.shadowBlur = 12;
+      ctx.globalAlpha = pt.alpha * 0.7;
       ctx.beginPath();
-      ctx.arc(toX(pt.x), toY(pt.y), 7 * pt.alpha, 0, Math.PI * 2);
+      ctx.arc(toX(pt.x), toY(pt.y), 5 * pt.alpha, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
   private drawWallShockwaves(ctx: CanvasRenderingContext2D, vp: RenderViewport, nowMs: number): void {
-    // Left Wall Laser Shockwave
+    // Left Wall Hairline Indicator
     const elapsedL = nowMs - this.wallHitLeftMs;
-    if (elapsedL < 450) {
-      const progress = elapsedL / 450;
-      const alpha = (1 - progress) * 0.95;
-      const x = vp.offsetX + 2;
+    if (elapsedL < 280) {
+      const alpha = Math.max(0, 1 - elapsedL / 280);
+      const x = vp.offsetX + 1;
 
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = '#39ff14';
-      ctx.lineWidth = 8 * (1 - progress * 0.5);
-      ctx.shadowColor = '#39ff14';
-      ctx.shadowBlur = 24;
-
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.moveTo(x, vp.offsetY);
       ctx.lineTo(x, vp.offsetY + vp.drawHeight);
       ctx.stroke();
-
-      this.drawDigitalText(
-        ctx,
-        '◄◄ SOL DUVAR ÇARPTI : DAVUL DÖNGÜLENDİ ◄◄',
-        vp.offsetX + 35,
-        vp.offsetY + vp.drawHeight / 2,
-        14,
-        '#39ff14',
-        'left'
-      );
       ctx.restore();
     }
 
-    // Right Wall Laser Shockwave
+    // Right Wall Hairline Indicator
     const elapsedR = nowMs - this.wallHitRightMs;
-    if (elapsedR < 450) {
-      const progress = elapsedR / 450;
-      const alpha = (1 - progress) * 0.95;
-      const x = vp.offsetX + vp.drawWidth - 2;
+    if (elapsedR < 280) {
+      const alpha = Math.max(0, 1 - elapsedR / 280);
+      const x = vp.offsetX + vp.drawWidth - 1;
 
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = '#39ff14';
-      ctx.lineWidth = 8 * (1 - progress * 0.5);
-      ctx.shadowColor = '#39ff14';
-      ctx.shadowBlur = 24;
-
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.moveTo(x, vp.offsetY);
       ctx.lineTo(x, vp.offsetY + vp.drawHeight);
       ctx.stroke();
-
-      this.drawDigitalText(
-        ctx,
-        '►► SAĞ DUVAR ÇARPTI : SYNTH DÖNGÜLENDİ ►►',
-        vp.offsetX + vp.drawWidth - 35,
-        vp.offsetY + vp.drawHeight / 2,
-        14,
-        '#39ff14',
-        'right'
-      );
       ctx.restore();
     }
   }
@@ -520,18 +472,16 @@ export class Overlay {
   private drawRetroDigitalHud(
     ctx: CanvasRenderingContext2D,
     vp: RenderViewport,
-    nowMs: number
+    _nowMs: number
   ): void {
     const pad2 = (n: number) => (n < 10 ? '0' + n : String(n));
-    const isBlink = Math.sin(nowMs * 0.008) > 0;
-    const neonGreen = '#39ff14';
+    const green = '#4ade80';
 
     const m = this.liveMetrics;
     const drumStatus = m ? m.drum.status : this.isDrumCapturing ? 'recording' : this.looperStatus?.drumIsPlaying ? 'looping' : 'idle';
     const synthStatus = m ? m.synth.status : this.isSynthCapturing ? 'recording' : (this.looperStatus?.synthLayersCount ?? 0) > 0 ? 'looping' : 'idle';
 
-    const yLine1 = vp.offsetY + vp.drawHeight - 44;
-    const yLine2 = vp.offsetY + vp.drawHeight - 20;
+    const y = vp.offsetY + vp.drawHeight - 20;
 
     // --- LEFT HAND (DRUMS) HUD ---
     const xLeft = vp.offsetX + 20;
@@ -540,65 +490,36 @@ export class Overlay {
       const beat = m ? m.drum.beat : 1;
       const targetBeats = m ? m.drum.targetBeats : 2;
       const hits = m ? m.drum.hitsCount : this.pendingDrumCount;
-      const recDot = isBlink ? '●' : '○';
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] ${recDot} REC :: ${pad2(targetBeats)} VURUŞ HEDEF (ÖLÇÜ ${pad2(bar)} • VURUŞ ${pad2(beat)})`,
+        `[L-DRUM] REC BAR 0${bar} BEAT 0${beat} (${pad2(targetBeats)} VURUŞ • ${hits} NOTA)`,
         xLeft,
-        yLine1,
-        15,
-        neonGreen,
-        'left'
-      );
-      this.drawDigitalText(
-        ctx,
-        `>> ${hits} NOTA | ◄ SOL DUVARA ÇARPTIR = DÖNGÜLE <<`,
-        xLeft,
-        yLine2,
-        13,
-        neonGreen,
+        y,
+        14,
+        green,
         'left'
       );
     } else if (drumStatus === 'looping') {
       const totalBeats = m ? m.drum.totalBeats : 2;
-      const totalBars = m ? m.drum.totalBars : 1;
       const beat = m ? m.drum.beat : 1;
       const hits = m ? m.drum.hitsCount : this.looperStatus?.drumEventsCount ?? 0;
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] PLAY ▶ :: ${pad2(totalBeats)} VURUŞ (${pad2(totalBars)} ÖLÇÜ) • VURUŞ ${pad2(beat)} [${hits} NOTA]`,
+        `[L-DRUM] PLAY ${pad2(totalBeats)} VURUŞ (${hits} NOTA) BEAT 0${beat}`,
         xLeft,
-        yLine1,
-        15,
-        neonGreen,
-        'left'
-      );
-      this.drawDigitalText(
-        ctx,
-        `>> VURARAK EKLE | ◄ SOL DUVARA ÇARPTIR = OVERDUB <<`,
-        xLeft,
-        yLine2,
-        13,
-        neonGreen,
+        y,
+        14,
+        green,
         'left'
       );
     } else {
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] HAZIR :: 2-VURUŞ ADIM [BEKLEMEDE]`,
+        `[L-DRUM] HAZIR`,
         xLeft,
-        yLine1,
-        15,
-        neonGreen,
-        'left'
-      );
-      this.drawDigitalText(
-        ctx,
-        `>> PARMAKLARLA VUR • ◄ SOL DUVARA ÇARPTIR = DÖNGÜLE <<`,
-        xLeft,
-        yLine2,
-        13,
-        neonGreen,
+        y,
+        14,
+        green,
         'left'
       );
     }
@@ -609,92 +530,37 @@ export class Overlay {
       const bar = m ? m.synth.bar : 1;
       const beat = m ? m.synth.beat : 1;
       const targetBeats = m ? m.synth.targetBeats : 2;
-      const recDot = isBlink ? '●' : '○';
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] ${recDot} REC :: ${pad2(targetBeats)} VURUŞ HEDEF (ÖLÇÜ ${pad2(bar)} • VURUŞ ${pad2(beat)})`,
+        `[R-SYNTH] REC BAR 0${bar} BEAT 0${beat} (${pad2(targetBeats)} VURUŞ)`,
         xRight,
-        yLine1,
-        15,
-        neonGreen,
-        'right'
-      );
-      this.drawDigitalText(
-        ctx,
-        `>> SAĞ DUVARA ÇARPTIR ► = DÖNGÜLE | AŞAĞI = SES <<`,
-        xRight,
-        yLine2,
-        13,
-        neonGreen,
+        y,
+        14,
+        green,
         'right'
       );
     } else if (synthStatus === 'looping') {
       const totalBeats = m ? m.synth.totalBeats : 2;
-      const totalBars = m ? m.synth.totalBars : 1;
       const beat = m ? m.synth.beat : 1;
       const layers = m ? m.synth.layersCount : this.looperStatus?.synthLayersCount ?? 0;
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] PLAY ▶ :: ${pad2(totalBeats)} VURUŞ (${pad2(totalBars)} ÖLÇÜ) • VURUŞ ${pad2(beat)} [KATMAN ${pad2(layers)}]`,
+        `[R-SYNTH] PLAY ${pad2(totalBeats)} VURUŞ (KATMAN ${layers}) BEAT 0${beat}`,
         xRight,
-        yLine1,
-        15,
-        neonGreen,
-        'right'
-      );
-      this.drawDigitalText(
-        ctx,
-        `>> YUMRUKLA ÇAL | SAĞ DUVARA ÇARPTIR ► = OVERDUB <<`,
-        xRight,
-        yLine2,
-        13,
-        neonGreen,
+        y,
+        14,
+        green,
         'right'
       );
     } else {
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] HAZIR :: 2-VURUŞ ADIM [BEKLEMEDE]`,
+        `[R-SYNTH] HAZIR`,
         xRight,
-        yLine1,
-        15,
-        neonGreen,
-        'right'
-      );
-      this.drawDigitalText(
-        ctx,
-        `>> YUMRUK YAP VE ÇAL • SAĞ DUVARA ÇARPTIR ► = DÖNGÜLE <<`,
-        xRight,
-        yLine2,
-        13,
-        neonGreen,
-        'right'
-      );
-    }
-
-    // --- TOP CENTER (MASTER LOOP & BAR METRICS) ---
-    const xCenter = vp.offsetX + vp.drawWidth / 2;
-    const yTop = vp.offsetY + 24;
-    const bpm = m ? m.bpm : 120;
-    if (m && m.master.active) {
-      this.drawDigitalText(
-        ctx,
-        `::: MASTER ${bpm} BPM | DÖNGÜ: ${pad2(m.master.totalBeats)} VURUŞ (${pad2(m.master.totalBars)} ÖLÇÜ) • VURUŞ ${pad2(m.master.beat)} :::`,
-        xCenter,
-        yTop,
+        y,
         14,
-        neonGreen,
-        'center'
-      );
-    } else {
-      this.drawDigitalText(
-        ctx,
-        `::: BEATCAM DUVAR LOOPER • 2-VURUŞ ADIM • ${bpm} BPM :::`,
-        xCenter,
-        yTop,
-        14,
-        neonGreen,
-        'center'
+        green,
+        'right'
       );
     }
   }
@@ -708,11 +574,10 @@ export class Overlay {
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    const bannerText = `>>> ${toast.text.toUpperCase()} <<<`;
     const bx = vp.offsetX + vp.drawWidth / 2;
-    const by = vp.offsetY + 52;
+    const by = vp.offsetY + 32;
 
-    this.drawDigitalText(ctx, bannerText, bx, by, 16, '#39ff14', 'center');
+    this.drawDigitalText(ctx, toast.text, bx, by, 14, '#4ade80', 'center');
 
     ctx.restore();
   }
