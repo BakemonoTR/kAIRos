@@ -601,25 +601,25 @@ function runTests() {
   // 16. Test Proportional 0%..100% Theremin Volume from Hand Squeeze
   {
     const teVol = new ThereminEngine();
-    const openRes = teVol.updateGesture(0.02, 0.5, 0.5);
-    assert(openRes.volume === 0, 'Fully open hand (clench=0.02) must produce 0% volume');
+    const openRes = teVol.updateGesture(0.05, 0.5, 0.5);
+    assert(openRes.volume === 0, 'Fully open hand (clench=0.05) must produce 0% volume');
 
-    const slightCupRes = teVol.updateGesture(0.25, 0.5, 0.5);
+    const slightCupRes = teVol.updateGesture(0.35, 0.5, 0.5);
     assert(
-      slightCupRes.volume > 0.15 && slightCupRes.volume < 0.30,
-      `Slightly open/cupped hand (clench=0.25) must produce low volume (~20%, got ${Math.round(slightCupRes.volume * 100)}%)`
+      slightCupRes.volume > 0.08 && slightCupRes.volume < 0.25,
+      `Slightly cupped hand (clench=0.35) must produce low volume (~13%, got ${Math.round(slightCupRes.volume * 100)}%)`
     );
 
-    const halfFistRes = teVol.updateGesture(0.475, 0.5, 0.5);
+    const halfFistRes = teVol.updateGesture(0.64, 0.5, 0.5);
     assert(
-      Math.round(halfFistRes.volume * 100) === 50,
-      `Half-squeezed hand (clench=0.475) must produce 50% volume (got ${Math.round(halfFistRes.volume * 100)}%)`
+      halfFistRes.volume > 0.40 && halfFistRes.volume < 0.60,
+      `Half-squeezed hand (clench=0.64) must produce mid volume (~50%, got ${Math.round(halfFistRes.volume * 100)}%)`
     );
 
-    const fullFistRes = teVol.updateGesture(0.90, 0.5, 0.5);
+    const fullFistRes = teVol.updateGesture(0.96, 0.5, 0.5);
     assert(
       Math.round(fullFistRes.volume * 100) === 100,
-      `Full fist (clench=0.90) must produce 100% volume (got ${Math.round(fullFistRes.volume * 100)}%)`
+      `Full fist (clench=0.96) must produce 100% volume (got ${Math.round(fullFistRes.volume * 100)}%)`
     );
   }
 

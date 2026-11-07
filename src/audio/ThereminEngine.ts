@@ -299,17 +299,17 @@ export class ThereminEngine {
 
   /**
    * Maps hand clench ratio (0 = completely open, 1 = full fist) to normalized volume (0..1 = 0%..100%).
-   * - Open hand (<= 0.10): 0% (silent)
-   * - Semi-open / lightly cupped (0.15..0.45): low volume (~7%..47%)
-   * - Full fist (>= 0.85): 100% volume (1.0)
+   * - Open hand (<= 0.18): 0% (silent)
+   * - Semi-open / lightly cupped (0.25..0.55): low volume (~5%..38%)
+   * - Full tight fist (>= 0.94): 100% volume (1.0)
    */
   computeVolume(clenchRatio: number): number {
-    const threshold = this.active ? 0.08 : 0.12;
+    const threshold = this.active ? 0.15 : 0.18;
     if (clenchRatio <= threshold) {
       return 0;
     }
-    const norm = (clenchRatio - 0.10) / (0.85 - 0.10);
-    return Math.max(0, Math.min(1, norm));
+    const norm = Math.max(0, Math.min(1, (clenchRatio - 0.18) / (0.94 - 0.18)));
+    return Math.pow(norm, 1.35);
   }
 
   /**
