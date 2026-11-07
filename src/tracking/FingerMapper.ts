@@ -1,5 +1,6 @@
 import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import {
+  AppMode,
   FINGER_METAS,
   FingerId,
   MappedFinger,
@@ -77,12 +78,22 @@ function determineHandChirality(landmarks: Point3D[]): 'L' | 'R' | null {
   const knuckleDeltaX = (pinkyMcp.x - indexMcp.x) / palmScale;
   const thumbDeltaX = (thumbTip.x - pinkyMcp.x) / palmScale;
 
+  // 2D cross product of wrist->middleMcp and wrist->indexMcp for orientation stability
+  const vMiddleX = middleMcp.x - wrist.x;
+  const vMiddleY = middleMcp.y - wrist.y;
+  const vIndexX = indexMcp.x - wrist.x;
+  const vIndexY = indexMcp.y - wrist.y;
+  const crossZ = vMiddleX * vIndexY - vMiddleY * vIndexX;
+
   let score = 0;
   if (knuckleDeltaX > 0.12) score += 2;
   else if (knuckleDeltaX < -0.12) score -= 2;
 
   if (thumbDeltaX < -0.15) score += 1;
   else if (thumbDeltaX > 0.15) score -= 1;
+
+  if (crossZ > 0.002) score -= 1;
+  else if (crossZ < -0.002) score += 1;
 
   if (score >= 2) return 'R';
   if (score <= -2) return 'L';
@@ -101,7 +112,11 @@ export class FingerMapper {
    * Hand identity is stabilised with position + temporal continuity instead of
    * trusting per-frame handedness (which flips when the back of the hand is shown).
    */
-  map(result: HandLandmarkerResult | null, nowMs = performance.now()): MappedHandsResult {
+  map(
+    result: HandLandmarkerResult | null,
+    nowMs = performance.now(),
+    appMode?: AppMode
+  ): MappedHandsResult {
     const fingers = new Map<FingerId, MappedFinger>();
     const rawHands: MappedHandsResult['rawHands'] = [];
 
@@ -133,46 +148,61 @@ export class FingerMapper {
       let label: 'L' | 'R' | null = null;
       const MAX_CONTINUITY_JUMP = 0.25;
 
-      // 1) Spatial continuity with recently tracked hands
-      const distL =
-        this.tracks.L && nowMs - this.tracks.L.lastSeenMs < CONTINUITY_MS
-          ? Math.hypot(this.tracks.L.center.x - d.center.x, this.tracks.L.center.y - d.center.y)
-          : Infinity;
-      const distR =
-        this.tracks.R && nowMs - this.tracks.R.lastSeenMs < CONTINUITY_MS
-          ? Math.hypot(this.tracks.R.center.x - d.center.x, this.tracks.R.center.y - d.center.y)
-          : Infinity;
+      // In Theremin mode, screen side is absolute anchor to prevent Theremin jumping to Left hand
+      if (appMode === 'theremin') {
+        label = d.center.x < 0.48 ? 'L' : 'R';
+      } else {
+        // 1) Spatial continuity with recently tracked hands
+        const distL =
+          this.tracks.L && nowMs - this.tracks.L.lastSeenMs < CONTINUITY_MS
+            ? Math.hypot(this.tracks.L.center.x - d.center.x, this.tracks.L.center.y - d.center.y)
+            : Infinity;
+        const distR =
+          this.tracks.R && nowMs - this.tracks.R.lastSeenMs < CONTINUITY_MS
+            ? Math.hypot(this.tracks.R.center.x - d.center.x, this.tracks.R.center.y - d.center.y)
+            : Infinity;
 
-      if (distL < MAX_CONTINUITY_JUMP && distR < MAX_CONTINUITY_JUMP) {
-        if (distL < distR * 0.75) label = 'L';
-        else if (distR < distL * 0.75) label = 'R';
-      } else if (distL < MAX_CONTINUITY_JUMP && distR === Infinity) {
-        label = 'L';
-      } else if (distR < MAX_CONTINUITY_JUMP && distL === Infinity) {
-        label = 'R';
-      }
-
-      // 2) Anatomical chirality check (invariant under piano and upright poses)
-      if (!label) {
-        const anatomy = determineHandChirality(d.landmarks);
-        if (anatomy) {
-          label = anatomy;
+        if (distL < MAX_CONTINUITY_JUMP && distR < MAX_CONTINUITY_JUMP) {
+          if (distL < distR * 0.75) label = 'L';
+          else if (distR < distL * 0.75) label = 'R';
+        } else if (distL < MAX_CONTINUITY_JUMP && distR === Infinity) {
+          label = 'L';
+        } else if (distR < MAX_CONTINUITY_JUMP && distL === Infinity) {
+          label = 'R';
         }
-      }
 
-      // 3) Keep previous lone label if consistent with position
-      if (!label && this.loneLabel) {
-        const expectedSide = this.loneLabel === 'L' ? d.center.x < 0.6 : d.center.x > 0.4;
-        if (expectedSide) {
-          label = this.loneLabel;
+        const isFarLeft = d.center.x < 0.40;
+        const isFarRight = d.center.x > 0.60;
+
+        if (label === 'R' && isFarLeft && distL === Infinity) label = null;
+        if (label === 'L' && isFarRight && distR === Infinity) label = null;
+
+        // 2) Anatomical chirality check (invariant under piano and upright poses)
+        if (!label) {
+          const anatomy = determineHandChirality(d.landmarks);
+          if (anatomy) {
+            if (anatomy === 'R' && isFarLeft) label = 'L';
+            else if (anatomy === 'L' && isFarRight) label = 'R';
+            else label = anatomy;
+          }
         }
-      }
 
-      // 4) Fresh hand fallback: screen side (mirrored: left half < 0.5 is Left, right half >= 0.5 is Right)
-      if (!label) {
-        if (this.loneRightProb > 0.65) label = 'R';
-        else if (this.loneRightProb < 0.35) label = 'L';
-        else label = d.center.x < 0.5 ? 'L' : 'R';
+        // 3) Keep previous lone label if consistent with position
+        if (!label && this.loneLabel) {
+          const expectedSide = this.loneLabel === 'L' ? d.center.x < 0.6 : d.center.x > 0.4;
+          if (expectedSide) {
+            label = this.loneLabel;
+          }
+        }
+
+        // 4) Fresh hand fallback: screen side (mirrored: left half < 0.5 is Left, right half >= 0.5 is Right)
+        if (!label) {
+          if (isFarLeft) label = 'L';
+          else if (isFarRight) label = 'R';
+          else if (this.loneRightProb > 0.65) label = 'R';
+          else if (this.loneRightProb < 0.35) label = 'L';
+          else label = d.center.x < 0.5 ? 'L' : 'R';
+        }
       }
 
       this.loneLabel = label;

@@ -72,6 +72,33 @@ export class GestureDetector {
     return { palmCenter, handScale };
   }
 
+  private computeJointCurl(mcp: Point3D, pip: Point3D, tip: Point3D): number {
+    const v1x = pip.x - mcp.x;
+    const v1y = pip.y - mcp.y;
+    const v1z = pip.z - mcp.z;
+
+    const v2x = tip.x - pip.x;
+    const v2y = tip.y - pip.y;
+    const v2z = tip.z - pip.z;
+
+    const mag1 = Math.sqrt(v1x * v1x + v1y * v1y + v1z * v1z);
+    const mag2 = Math.sqrt(v2x * v2x + v2y * v2y + v2z * v2z);
+
+    if (mag1 < 0.005 || mag2 < 0.005) {
+      return 0; // Degenerate / unpopulated mock joints
+    }
+
+    const cosTheta = Math.max(
+      -1,
+      Math.min(1, (v1x * v2x + v1y * v2y + v1z * v2z) / (mag1 * mag2))
+    );
+    // When straight: cosTheta ~ 1.0 -> curl = 0
+    // When 90 deg: cosTheta ~ 0.0 -> curl = 0.67
+    // When tightly curled into fist: cosTheta ~ -0.5 -> curl = 1.0
+    const curl = (1 - cosTheta) / 1.5;
+    return Math.max(0, Math.min(1, curl));
+  }
+
   computeClenchRatio(landmarks: Point3D[]): number {
     const { palmCenter, handScale } = this.computeHandGeometry(landmarks);
 
@@ -88,8 +115,24 @@ export class GestureDetector {
     const openDist = 1.35;
     const closedDist = 0.52;
 
-    const rawRatio = 1 - (avgDist - closedDist) / (openDist - closedDist);
-    return Math.max(0, Math.min(1, rawRatio));
+    const distRatio = Math.max(0, Math.min(1, 1 - (avgDist - closedDist) / (openDist - closedDist)));
+
+    // Knuckle curl from anatomical PIP joints: completely invariant to moving hand left/right
+    if (landmarks.length >= 21) {
+      const c1 = this.computeJointCurl(landmarks[5], landmarks[6], landmarks[8]);
+      const c2 = this.computeJointCurl(landmarks[9], landmarks[10], landmarks[12]);
+      const c3 = this.computeJointCurl(landmarks[13], landmarks[14], landmarks[16]);
+      const c4 = this.computeJointCurl(landmarks[17], landmarks[18], landmarks[20]);
+      const c5 = this.computeJointCurl(landmarks[1], landmarks[2], landmarks[4]);
+
+      const validCurls = [c1, c2, c3, c4, c5].filter((c) => c > 0);
+      if (validCurls.length >= 3) {
+        const avgCurl = (c1 + c2 + c3 + c4 + c5) / 5;
+        return Math.max(0, Math.min(1, 0.70 * avgCurl + 0.30 * distRatio));
+      }
+    }
+
+    return distRatio;
   }
 
   /**
@@ -116,18 +159,18 @@ export class GestureDetector {
       this.rClenchSmoothed = this.rClenchSmoothed * 0.65 + rawClench * 0.35;
       smoothed = this.rClenchSmoothed;
       if (this.rIsClosed) {
-        if (smoothed < 0.36) this.rIsClosed = false;
+        if (smoothed < 0.38) this.rIsClosed = false;
       } else {
-        if (smoothed > 0.44) this.rIsClosed = true;
+        if (smoothed > 0.52) this.rIsClosed = true;
       }
       isClosed = this.rIsClosed;
     } else {
       this.lClenchSmoothed = this.lClenchSmoothed * 0.65 + rawClench * 0.35;
       smoothed = this.lClenchSmoothed;
       if (this.lIsClosed) {
-        if (smoothed < 0.36) this.lIsClosed = false;
+        if (smoothed < 0.38) this.lIsClosed = false;
       } else {
-        if (smoothed > 0.44) this.lIsClosed = true;
+        if (smoothed > 0.52) this.lIsClosed = true;
       }
       isClosed = this.lIsClosed;
     }
@@ -145,11 +188,15 @@ export class GestureDetector {
     let velY = 0;
     let swipe: SwipeEvent | null = null;
 
-    // Search for maximum horizontal displacement in the recent 45ms to 240ms window
+    // Search for maximum horizontal and vertical displacements in the recent 45ms to 250ms window
     if (history.length >= 2) {
       let maxAbsDx = 0;
       let bestDx = 0;
-      let bestDt = 0;
+      let bestDtX = 0;
+
+      let maxDy = 0;
+      let bestDy = 0;
+      let bestDtY = 0;
 
       for (let i = history.length - 2; i >= 0; i--) {
         const past = history[i];
@@ -159,18 +206,53 @@ export class GestureDetector {
           if (Math.abs(dx) > maxAbsDx) {
             maxAbsDx = Math.abs(dx);
             bestDx = dx;
-            bestDt = dt;
+            bestDtX = dt;
+          }
+
+          const dy = palmCenter.y - past.y;
+          if (dy > maxDy) {
+            maxDy = dy;
+            bestDy = dy;
+            bestDtY = dt;
           }
         }
       }
 
-      if (bestDt > 0) {
-        velX = bestDx / bestDt;
-        const lastSwipe = isRight ? this.lastRSwipeTime : this.lastLSwipeTime;
-        const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
+      if (bestDtX > 0) velX = bestDx / bestDtX;
+      if (bestDtY > 0) velY = bestDy / bestDtY;
 
-        // Threshold: at least 0.08 screen width moved and at least 0.80 width/sec velocity
-        if (canSwipe && maxAbsDx >= 0.08 && Math.abs(velX) >= 0.80) {
+      const lastSwipe = isRight ? this.lastRSwipeTime : this.lastLSwipeTime;
+      const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
+
+      if (canSwipe) {
+        // Downward swipe: moving down screen (y increases) by at least 0.09 screen height with velocity >= 0.80/s
+        const isDownwardSwipe =
+          maxDy >= 0.09 &&
+          velY >= 0.80 &&
+          velY > Math.abs(velX) * 1.15;
+
+        // Horizontal swipe: moving left or right by at least 0.08 screen width with velocity >= 0.80/s
+        const isHorizontalSwipe =
+          maxAbsDx >= 0.08 &&
+          Math.abs(velX) >= 0.80 &&
+          Math.abs(velX) > velY * 1.15;
+
+        if (isDownwardSwipe) {
+          const direction = 'down';
+          const color = '#38bdf8'; // Cyan streak for down swipe
+
+          if (isRight) {
+            this.lastRSwipeTime = nowMs;
+            swipe = { hand: 'R', direction, timestampMs: nowMs };
+          } else {
+            this.lastLSwipeTime = nowMs;
+            swipe = { hand: 'L', direction, timestampMs: nowMs };
+          }
+
+          this.addStreakPoints(history, color, nowMs);
+          if (isRight) this.rHistory = [];
+          else this.lHistory = [];
+        } else if (isHorizontalSwipe) {
           const direction: 'left' | 'right' = bestDx > 0 ? 'right' : 'left';
           const color = isRight ? '#818cf8' : '#f43f5e';
 
@@ -183,7 +265,6 @@ export class GestureDetector {
           }
 
           this.addStreakPoints(history, color, nowMs);
-          // Clear history after trigger to prevent backswing re-triggering
           if (isRight) this.rHistory = [];
           else this.lHistory = [];
         }

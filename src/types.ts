@@ -31,7 +31,7 @@ export interface ThereminState {
 
 export interface SwipeEvent {
   hand: 'L' | 'R';
-  direction: 'left' | 'right';
+  direction: 'left' | 'right' | 'down' | 'up';
   timestampMs: number;
 }
 

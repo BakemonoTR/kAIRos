@@ -6,6 +6,16 @@ export interface ThereminNoteInfo {
   midiNote: number;
 }
 
+export const THEREMIN_PRESETS: ThereminPreset[] = ['cosmic', 'cyber', 'dreampad', 'chiptune', 'cello'];
+
+export const THEREMIN_PRESET_LABELS: Record<ThereminPreset, string> = {
+  cosmic: 'Cosmic Theremin (Klasik Sine)',
+  cyber: 'Cyber Lead (Agresif Saw)',
+  dreampad: 'Dream Pad (Ambient Doku)',
+  chiptune: '8-Bit Retro (Square)',
+  cello: 'Cello Vox (Yumuşak Vokal)',
+};
+
 const PENTATONIC_INTERVALS = [0, 3, 5, 7, 10]; // Minor Pentatonic (C, Eb, F, G, Bb)
 const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
 const BLUES_INTERVALS = [0, 3, 5, 6, 7, 10];
@@ -83,6 +93,42 @@ export class ThereminEngine {
 
   getOutputNode(): GainNode | null {
     return this.outputNode;
+  }
+
+  getPreset(): ThereminPreset {
+    return this.currentPreset;
+  }
+
+  cycleNextPreset(): { preset: ThereminPreset; name: string } {
+    const idx = THEREMIN_PRESETS.indexOf(this.currentPreset);
+    const next = THEREMIN_PRESETS[(idx + 1) % THEREMIN_PRESETS.length];
+    this.setPreset(next);
+    return { preset: next, name: THEREMIN_PRESET_LABELS[next] };
+  }
+
+  playPresetChangeChime(): void {
+    if (!this.ctx || !this.outputNode) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.setValueAtTime(880.0, now + 0.08); // A5
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      osc.connect(gain);
+      gain.connect(this.outputNode);
+
+      osc.start(now);
+      osc.stop(now + 0.23);
+    } catch {
+      // Audio fallback
+    }
   }
 
   setPreset(preset: ThereminPreset): void {
@@ -280,22 +326,24 @@ export class ThereminEngine {
       this.osc2.frequency.setTargetAtTime(pitchInfo.frequency, now, portamentoTime);
     }
 
-    // Gate & Volume control from Hand Closure / Fist:
-    // User requested: "el açıkken kapatınca çalsa sağ el için"
-    // When hand closes / makes a fist (clenchRatio > 0.45): Gate ON!
-    // Open hand: Gate OFF, leaving a lush reverb / delay tail behind!
-    const isClosed = clenchRatio > 0.42;
+    // Gate & Volume control from Fist Squeeze Tightness:
+    // User requested: "avcumu ne kadar sıktığıma bağlı olarak thereminin sesi ayarlanmalı"
+    // Gate ON when fist is closed (clenchRatio > 0.46) with hysteresis down to 0.38
+    const isClosed = this.active ? clenchRatio > 0.38 : clenchRatio > 0.46;
 
+    let dynamicVolume = 0;
     if (isClosed) {
       this.active = true;
-      // Volume scales dynamically with tightness of fist (0.42 -> 0.85+)
-      const normalizedVolume = Math.min(1.0, Math.max(0.2, (clenchRatio - 0.35) * 1.8));
-      this.vcaGain.gain.setTargetAtTime(normalizedVolume * 0.75, now, 0.025); // fast smooth attack
+      // Squeeze tightness normalized: 0.42 (just closed) -> 0.88+ (clenched tight)
+      const squeezeTightness = Math.max(0, Math.min(1, (clenchRatio - 0.42) / 0.46));
+      // Power curve for natural acoustic response: gentle whisper when light, punchy when tight
+      dynamicVolume = 0.15 + 0.82 * Math.pow(squeezeTightness, 1.25);
+      this.vcaGain.gain.setTargetAtTime(dynamicVolume * 0.80, now, 0.03);
     } else {
       if (this.active) {
         this.active = false;
         // Release tail: fade out VCA over ~140ms while delay/reverb rings out
-        this.vcaGain.gain.setTargetAtTime(0, now, 0.12);
+        this.vcaGain.gain.setTargetAtTime(0, now, 0.14);
       }
     }
 
@@ -303,7 +351,7 @@ export class ThereminEngine {
       active: this.active,
       frequency: this.currentFreq,
       noteName: this.currentNoteName,
-      volume: isClosed ? Math.min(1, (clenchRatio - 0.35) * 1.8) : 0,
+      volume: isClosed ? dynamicVolume : 0,
       brightness: cutoffFreq,
     };
   }

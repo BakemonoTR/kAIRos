@@ -1,6 +1,7 @@
 import { GestureDetector } from './src/gesture/GestureDetector';
 import { ThereminEngine } from './src/audio/ThereminEngine';
 import { AirLooper } from './src/audio/AirLooper';
+import { FingerMapper } from './src/tracking/FingerMapper';
 import { Point3D } from './src/types';
 
 function createMockHand(clench: 'open' | 'closed', x = 0.5, y = 0.5): Point3D[] {
@@ -130,6 +131,55 @@ function runTests() {
   assert(al.calculateQuantizedBeats(7.8) === 8, '7.8 beats phrase should quantize to 8 beats (2 bars)');
   assert(al.calculateQuantizedBeats(8.5) === 12, '8.5 beats (exceeded 8 beats) should quantize to 12 beats (3 bars)');
   assert(al.calculateQuantizedBeats(12.5) === 16, '12.5 beats (exceeded 12 beats) should quantize to 16 beats (4 bars)');
+
+  // 8. Test Downward Swipe on Right Hand
+  const gdDown = new GestureDetector();
+  let downSwipe = null;
+  const dTimes = [4000, 4050, 4100, 4150];
+  const dYs = [0.25, 0.35, 0.48, 0.62];
+  for (let i = 0; i < dTimes.length; i++) {
+    const res = gdDown.process('R', createMockHand('open', 0.65, dYs[i]), dTimes[i]);
+    if (res.swipe) {
+      downSwipe = res.swipe;
+      break;
+    }
+  }
+  assert(downSwipe !== null, 'Right hand fast downward motion should trigger downward swipe');
+  assert(downSwipe?.direction === 'down', 'Down swipe direction must be down');
+  assert(downSwipe?.hand === 'R', 'Down swipe hand must be R');
+
+  // 9. Test Theremin Preset Cycling
+  const p1Preset = te.getPreset();
+  const nextInfo = te.cycleNextPreset();
+  assert(nextInfo.preset !== p1Preset, `cycleNextPreset should switch preset (from ${p1Preset} to ${nextInfo.preset})`);
+  assert(te.getPreset() === nextInfo.preset, 'ThereminEngine current preset should match returned preset');
+
+  // 10. Test Theremin Preset Names map all 5 presets
+  const allPresets = ['cosmic', 'cyber', 'dreampad', 'chiptune', 'cello'] as const;
+  for (let i = 0; i < 5; i++) {
+    const c = te.cycleNextPreset();
+    assert(allPresets.includes(c.preset), `Preset ${c.preset} should be a valid preset`);
+  }
+
+  // 11. Test Chirality Anchor in Theremin Mode
+  const fm = new FingerMapper();
+  // Hand at left side of screen (in unmirrored mpResult: x = 0.75 -> mirrored x = 0.25)
+  const mockLeftMpResult = {
+    landmarks: [createMockHand('open', 0.75, 0.5)],
+    handednesses: [[{ categoryName: 'Left', score: 0.9 }]],
+  } as any;
+  const mappedL = fm.map(mockLeftMpResult, 5000, 'theremin');
+  assert(mappedL.rawHands.length === 1, 'Should detect 1 hand');
+  assert(mappedL.rawHands[0].hand === 'L', 'Left-side hand must strictly map to L in Theremin mode');
+
+  // Hand at right side of screen (in unmirrored mpResult: x = 0.25 -> mirrored x = 0.75)
+  const mockRightMpResult = {
+    landmarks: [createMockHand('open', 0.25, 0.5)],
+    handednesses: [[{ categoryName: 'Right', score: 0.9 }]],
+  } as any;
+  const mappedR = fm.map(mockRightMpResult, 5300, 'theremin');
+  assert(mappedR.rawHands.length === 1, 'Should detect 1 hand');
+  assert(mappedR.rawHands[0].hand === 'R', 'Right-side hand must strictly map to R in Theremin mode');
 
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }

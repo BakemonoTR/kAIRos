@@ -462,18 +462,20 @@ async function bootstrap(): Promise<void> {
           hudFps.textContent = `FPS: ${Math.round(fpsSmooth)}`;
         }
 
+        const settings = store.getSettings();
         const mpResult = handTracker.detect(video, nowMs);
-        const mapped = fingerMapper.map(mpResult, nowMs);
+        const mapped = fingerMapper.map(mpResult, nowMs, settings.appMode);
         hudHands.textContent = `Eller: ${mapped.rawHands.length}`;
 
         const slots = store.getSlots();
-        const settings = store.getSettings();
 
         // 1. AirLooper beat update
         airLooper.update();
 
         // 2. Gesture & Swipe detection
         let rightHandDetected = false;
+        let isLeftFastMoving = false;
+
         for (const rawHand of mapped.rawHands) {
           const handKey = rawHand.hand;
           const { gestureState, swipe } = gestureDetector.process(
@@ -482,26 +484,43 @@ async function bootstrap(): Promise<void> {
             nowMs
           );
 
+          if (handKey === 'L') {
+            if (Math.abs(gestureState.velocityX) > 0.65 || Math.abs(gestureState.velocityY) > 0.70) {
+              isLeftFastMoving = true;
+            }
+          }
+
           if (swipe) {
             try {
               store.emit('swipeEvent', swipe);
               if (swipe.hand === 'R') {
-                const res = airLooper.commitSynthLoop();
-                if (res.totalLayers > 0) {
-                  const bars = Math.round(res.beatsCount / 4);
-                  overlay.showToast(
-                    `🔁 🎹 Synth: ${res.beatsCount} Vuruş (${bars} Bar • Katman ${res.totalLayers})`,
-                    '#818cf8'
-                  );
-                  store.emit(
-                    'statusMessage',
-                    `🎹 Synth döngüye alındı (${res.beatsCount} Vuruş • ${bars} Bar • ${res.durationSec.toFixed(1)} sn)`
-                  );
+                if (swipe.direction === 'down') {
+                  // Downward swipe on right hand: Cycle to next synth preset
+                  const nextPreset = theremin.cycleNextPreset();
+                  store.updateSettings({ thereminPreset: nextPreset.preset });
+                  selThereminPreset.value = nextPreset.preset;
+                  theremin.playPresetChangeChime();
+                  overlay.showToast(`🎛️ Synth Sesi: ${nextPreset.name}`, '#38bdf8');
+                  store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
                 } else {
-                  overlay.showToast('ℹ️ Henüz synth çalınmadı (Yumruk yapıp melodi çal)', '#94a3b8');
-                  store.emit('statusMessage', 'Henüz synth çalınmadı (Yumruk yapıp melodi çal)');
+                  // Horizontal swipe on right hand: Commit synth loop
+                  const res = airLooper.commitSynthLoop();
+                  if (res.totalLayers > 0) {
+                    const bars = Math.round(res.beatsCount / 4);
+                    overlay.showToast(
+                      `🔁 🎹 Synth: ${res.beatsCount} Vuruş (${bars} Bar • Katman ${res.totalLayers})`,
+                      '#818cf8'
+                    );
+                    store.emit(
+                      'statusMessage',
+                      `🎹 Synth döngüye alındı (${res.beatsCount} Vuruş • ${bars} Bar • ${res.durationSec.toFixed(1)} sn)`
+                    );
+                  } else {
+                    overlay.showToast('ℹ️ Henüz synth çalınmadı (Yumruk yapıp melodi çal)', '#94a3b8');
+                    store.emit('statusMessage', 'Henüz synth çalınmadı (Yumruk yapıp melodi çal)');
+                  }
+                  refreshLooperUi();
                 }
-                refreshLooperUi();
               } else if (swipe.hand === 'L') {
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
@@ -568,6 +587,10 @@ async function bootstrap(): Promise<void> {
         for (const tap of taps) {
           // In theremin mode, right hand taps are ignored so right hand is exclusively Theremin
           if (settings.appMode === 'theremin' && tap.fingerId >= 5) {
+            continue;
+          }
+          // Suppress accidental drum taps when left hand is performing a fast swipe flick
+          if (tap.fingerId < 5 && isLeftFastMoving) {
             continue;
           }
           store.emit('noteOn', { ...tap, timestampMs: nowMs });
