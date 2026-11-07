@@ -7,16 +7,16 @@ import { SynthGenerator } from '../audio/SynthGenerator';
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 const EN_FINGER_LABELS: Record<FingerId, string> = {
-  0: 'L Thumb',
-  1: 'L Index',
-  2: 'L Middle',
-  3: 'L Ring',
-  4: 'L Pinky',
-  5: 'R Thumb',
-  6: 'R Index',
-  7: 'R Middle',
-  8: 'R Ring',
-  9: 'R Pinky',
+  0: 'Left thumb',
+  1: 'Left index',
+  2: 'Left middle',
+  3: 'Left ring',
+  4: 'Left pinky',
+  5: 'Right thumb',
+  6: 'Right index',
+  7: 'Right middle',
+  8: 'Right ring',
+  9: 'Right pinky',
 };
 
 export function midiNoteToName(midi: number): string {
@@ -200,17 +200,17 @@ export class FingerPanel {
       }
     });
 
-    // 1. Channel index button -> click to load sample
+    // 1. Simple color indicator dot -> click to load sample
     const dotBtn = document.createElement('button');
     dotBtn.className = 'slot-dot-btn';
     dotBtn.title = `${enLabel} — Click or drop audio file to load sample`;
-    dotBtn.textContent = String(slot.fingerId + 1).padStart(2, '0');
+    dotBtn.setAttribute('aria-label', enLabel);
     dotBtn.addEventListener('click', () => this.openFilePicker(slot.fingerId));
 
     // 2. Finger info
     const info = document.createElement('div');
     info.className = 'slot-info';
-    info.title = 'Click to load one-shot sample';
+    info.title = 'Click to load custom sample';
     info.addEventListener('click', () => this.openFilePicker(slot.fingerId));
 
     const topLine = document.createElement('div');
@@ -232,7 +232,7 @@ export class FingerPanel {
 
     info.append(topLine, sampleSpan);
 
-    // 3. Actions: MIDI Note + LOAD + SYNTH + TRIG + CLR
+    // 3. Actions: MIDI Note + Load + Synth + Play + Reset
     const actions = document.createElement('div');
     actions.className = 'slot-actions';
 
@@ -254,21 +254,21 @@ export class FingerPanel {
     const uploadBtn = document.createElement('button');
     uploadBtn.className = 'icon-btn';
     uploadBtn.title = 'Load audio file';
-    uploadBtn.textContent = 'LOAD';
+    uploadBtn.textContent = 'Load';
     uploadBtn.addEventListener('click', () => this.openFilePicker(slot.fingerId));
 
     const diceBtn = document.createElement('button');
     diceBtn.className = 'icon-btn';
-    diceBtn.title = 'Generate random synth voice';
-    diceBtn.textContent = 'SYNTH';
+    diceBtn.title = 'Generate random synth sound';
+    diceBtn.textContent = 'Synth';
     diceBtn.addEventListener('click', () => {
       void this.randomizeSynth(slot.fingerId);
     });
 
     const testBtn = document.createElement('button');
     testBtn.className = 'icon-btn';
-    testBtn.title = `Trigger (${meta.keyShortcut})`;
-    testBtn.textContent = 'TRIG';
+    testBtn.title = `Play (${meta.keyShortcut})`;
+    testBtn.textContent = 'Play';
     testBtn.addEventListener('click', () => {
       this.store.emit('noteOn', {
         fingerId: slot.fingerId,
@@ -288,8 +288,8 @@ export class FingerPanel {
     if (slot.sourceType === 'custom') {
       const clearBtn = document.createElement('button');
       clearBtn.className = 'icon-btn';
-      clearBtn.title = 'Clear custom sample and revert to synth';
-      clearBtn.textContent = 'CLR';
+      clearBtn.title = 'Reset to synth sound';
+      clearBtn.textContent = 'Reset';
       clearBtn.addEventListener('click', () => {
         void this.clearCustomToSynth(slot.fingerId);
       });

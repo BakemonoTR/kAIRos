@@ -144,7 +144,7 @@ async function bootstrap(): Promise<void> {
   for (let n = 1; n <= 10; n++) {
     const opt = document.createElement('option');
     opt.value = String(n);
-    opt.textContent = `${n} CH`;
+    opt.textContent = `${n} ${n === 1 ? 'finger' : 'fingers'}`;
     selActiveFingers.appendChild(opt);
   }
 
@@ -188,8 +188,8 @@ async function bootstrap(): Promise<void> {
 
   function refreshLooperUi(): void {
     const status = airLooper.getStatus();
-    lblSynthLayers.textContent = `${status.synthLayersCount} LAYERS`;
-    lblDrumHits.textContent = `${status.drumEventsCount} HITS`;
+    lblSynthLayers.textContent = `${status.synthLayersCount} ${status.synthLayersCount === 1 ? 'layer' : 'layers'}`;
+    lblDrumHits.textContent = `${status.drumEventsCount} ${status.drumEventsCount === 1 ? 'hit' : 'hits'}`;
     store.emit('looperUpdate', status);
   }
 
@@ -481,7 +481,7 @@ async function bootstrap(): Promise<void> {
 
       startOverlay.classList.add('hidden');
       btnToggleCam.disabled = false;
-      btnToggleCam.textContent = 'STOP';
+      btnToggleCam.textContent = 'Stop';
       btnCalibrate.disabled = false;
       btnRecord.disabled = false;
       store.emit('statusMessage', 'Live tracking active');
@@ -756,7 +756,7 @@ async function bootstrap(): Promise<void> {
     theremin.silence();
     overlay.setThereminState(null);
     camera.stop();
-    btnToggleCam.textContent = 'START';
+    btnToggleCam.textContent = 'Start';
     btnCalibrate.disabled = true;
     btnRecord.disabled = true;
     startOverlay.classList.remove('hidden');
@@ -783,8 +783,8 @@ async function bootstrap(): Promise<void> {
     if (!camera.isRunning() || tapDetector.isCalibrating()) return;
 
     btnCalibrate.disabled = true;
-    countdownTitle.textContent = 'CALIBRATING';
-    countdownDesc.textContent = 'Hold hands steady in neutral position...';
+    countdownTitle.textContent = 'Calibrating';
+    countdownDesc.textContent = 'Hold your hands steady in a comfortable playing position...';
     countdownNumber.textContent = '3';
     countdownBanner.classList.remove('hidden');
     tapDetector.beginCalibration();
@@ -820,7 +820,7 @@ async function bootstrap(): Promise<void> {
     videoRecorder.start(audio.getAudioStream(), settings.recordResolution);
 
     btnRecord.classList.add('recording');
-    recLabel.textContent = 'STOP';
+    recLabel.textContent = 'Stop';
     recTimer.classList.remove('hidden');
     recStartWallMs = performance.now();
     recTimer.textContent = '00:00.0';
@@ -841,7 +841,7 @@ async function bootstrap(): Promise<void> {
     }
 
     btnRecord.classList.remove('recording');
-    recLabel.textContent = 'REC';
+    recLabel.textContent = 'Record';
     recTimer.classList.add('hidden');
 
     const midiEvents = midiRecorder.stop(audio.getCurrentTime());
