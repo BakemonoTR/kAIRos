@@ -3,7 +3,6 @@ import { ThereminEngine } from './src/audio/ThereminEngine';
 import { Point3D } from './src/types';
 
 function createMockHand(clench: 'open' | 'closed', x = 0.5, y = 0.5): Point3D[] {
-  // Landmarks 0..20
   const lms: Point3D[] = [];
   const wrist = { x, y: y + 0.15, z: 0 };
   const middleMcp = { x, y: y - 0.05, z: 0 };
@@ -15,8 +14,7 @@ function createMockHand(clench: 'open' | 'closed', x = 0.5, y = 0.5): Point3D[] 
   lms[0] = wrist;
   lms[9] = middleMcp;
 
-  // Set fingertips
-  const tipRadius = clench === 'closed' ? 0.08 : 0.28; // closed curls into palm, open extends
+  const tipRadius = clench === 'closed' ? 0.08 : 0.28;
   const tipIndices = [4, 8, 12, 16, 20];
   for (const idx of tipIndices) {
     lms[idx] = { x: palmCenter.x, y: palmCenter.y - tipRadius, z: 0 };
@@ -55,7 +53,6 @@ function runTests() {
   const p1 = gd.process('R', openHand, 100);
   assert(!p1.gestureState.isClosed, 'Open hand should not be marked as closed');
 
-  // Transition to closed
   gd.process('R', closedHand, 150);
   const p2 = gd.process('R', closedHand, 200);
   assert(p2.gestureState.isClosed, 'Closed fist should trigger isClosed = true');
@@ -98,13 +95,22 @@ function runTests() {
   assert(leftSwipe?.direction === 'left', 'Left hand swipe direction must be left');
   assert(leftSwipe?.hand === 'L', 'Left hand swipe hand must be L');
 
-  // 5. Test ThereminEngine Pitch Computation
+  // 5. Test Sudden Flick after Stationary Hand (Peak-stroke / no velocity dilution bug)
+  const gdFlick = new GestureDetector();
+  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3000);
+  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3050);
+  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3100);
+  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3150);
+  // Sudden flick to left: 0.50 -> 0.38 in 60ms (velocity = 2.0/s, dx = -0.12)
+  const flickRes = gdFlick.process('L', createMockHand('open', 0.38, 0.5), 3210);
+  assert(flickRes.swipe !== null, 'Sudden flick after stationary hold must trigger swipe without velocity dilution');
+  assert(flickRes.swipe?.hand === 'L', 'Flick hand must be L');
+
+  // 6. Test ThereminEngine Pitch Computation
   const te = new ThereminEngine();
   te.setScale('pentatonic');
 
-  // Low hand (bottom of screen, y = 0.85)
   const lowNote = te.computePitch(0.85);
-  // High hand (top of screen, y = 0.15)
   const highNote = te.computePitch(0.15);
 
   assert(

@@ -26,19 +26,25 @@ export class AirLooper {
   private writeIndex = 0;
   private bufferCapacitySamples = 0;
 
-  // BPM & Cycle
+  // BPM & Musical timing
   private bpm = 120;
-  private barsCount = 2; // 2 bars = 8 beats
   private loopStartTime = 0;
 
-  // Drum Looper State
+  // Drum Phrase & Looper State
   private pendingDrumHits: Array<{ fingerId: FingerId; velocity: number; timeSec: number }> = [];
   private drumHits: DrumLoopHit[] = [];
   private drumIsPlaying = false;
   private lastScheduledPhase = 0;
+  private drumPhraseStartTime = 0;
+  private lastDrumHitTime = 0;
+  private activeDrumLoopDuration = 2.0;
 
-  // Synth Looper State
+  // Synth Phrase & Looper State
   private synthLayers: ActiveSynthLayer[] = [];
+  private synthPhraseStartTime = 0;
+  private lastSynthActiveTime = 0;
+  private synthIsCapturing = false;
+  private activeSynthLoopDuration = 2.0;
 
   init(ctx: AudioContext, audioEngine: AudioEngine, masterDestination: AudioNode): void {
     if (this.ctx) return;
@@ -46,9 +52,9 @@ export class AirLooper {
     this.audioEngine = audioEngine;
     this.masterDestination = masterDestination;
 
-    // Allocate 10 seconds circular buffer at current sample rate
+    // Allocate 12 seconds circular buffer at current sample rate
     const sr = ctx.sampleRate;
-    this.bufferCapacitySamples = sr * 10;
+    this.bufferCapacitySamples = sr * 12;
     this.circularBufferL = new Float32Array(this.bufferCapacitySamples);
     this.circularBufferR = new Float32Array(this.bufferCapacitySamples);
     this.writeIndex = 0;
@@ -78,7 +84,7 @@ export class AirLooper {
       this.writeIndex = w;
     };
 
-    // Connect: input -> recorderNode -> dummy output to keep script processor alive
+    // Connect: input -> recorderNode -> dummy silence output
     const dummySilence = ctx.createGain();
     dummySilence.gain.value = 0;
     this.recordInputGain.connect(this.recorderNode);
@@ -97,103 +103,220 @@ export class AirLooper {
   }
 
   getLoopDurationSec(): number {
-    // 2 bars in 4/4 = 8 beats
-    return (this.barsCount * 4 * 60) / this.bpm;
+    return this.activeDrumLoopDuration;
   }
 
   getCurrentPhase(): number {
     if (!this.ctx) return 0;
-    const dur = this.getLoopDurationSec();
+    const dur = this.activeDrumLoopDuration || 2.0;
     const elapsed = this.ctx.currentTime - this.loopStartTime;
     return ((elapsed % dur) + dur) % dur;
   }
 
-  // ==================== DRUM LOOPER ====================
+  /**
+   * Plays an immediate sci-fi feedback chime tone when a swipe succeeds
+   */
+  playSwipeChime(type: 'drum' | 'synth'): void {
+    if (!this.ctx || !this.masterDestination) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
 
+    if (type === 'drum') {
+      // Upbeat punchy confirmation blip
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(580, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.16);
+      gain.gain.setValueAtTime(0.45, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc.stop(now + 0.24);
+    } else {
+      // Ethereal ascending crystal chime
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(783.99, now + 0.07); // G5
+      osc.frequency.setValueAtTime(1046.5, now + 0.14); // C6
+      gain.gain.setValueAtTime(0.4, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+      osc.stop(now + 0.34);
+    }
+
+    osc.connect(gain);
+    gain.connect(this.masterDestination);
+    osc.start(now);
+  }
+
+  // ==================== DRUM LOOPER (5-SEC PHRASE CAPTURE) ====================
+
+  /**
+   * Called on every drum tap (Left Hand).
+   * Automatically starts a new phrase if idle for more than 5 seconds.
+   */
   recordDrumHit(fingerId: FingerId, velocity: number): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    this.pendingDrumHits.push({ fingerId, velocity, timeSec: now });
 
-    // Keep pending buffer within last 6 seconds
-    const cutoff = now - 6;
-    this.pendingDrumHits = this.pendingDrumHits.filter((h) => h.timeSec >= cutoff);
+    // If more than 5.0 seconds passed since the last hit, reset to a fresh phrase
+    if (this.pendingDrumHits.length === 0 || now - this.lastDrumHitTime > 5.0) {
+      this.drumPhraseStartTime = now;
+      this.pendingDrumHits = [];
+    }
+
+    this.pendingDrumHits.push({ fingerId, velocity, timeSec: now });
+    this.lastDrumHitTime = now;
+  }
+
+  isDrumCapturing(): boolean {
+    if (!this.ctx) return false;
+    return this.pendingDrumHits.length > 0 && this.ctx.currentTime - this.lastDrumHitTime <= 5.0;
+  }
+
+  getPendingDrumCount(): number {
+    return this.pendingDrumHits.length;
   }
 
   /**
-   * Called when Left Hand swipes Left:
-   * Commits recorded drum hits to loop, or overdubs if loop is already playing.
+   * Commits the recorded drum phrase to an ongoing loop.
+   * If a loop is already playing, overdubs the new hits into the current loop cycle!
    */
-  commitDrumLoop(): { addedCount: number; totalCount: number } {
-    if (!this.ctx) return { addedCount: 0, totalCount: 0 };
-
-    const dur = this.getLoopDurationSec();
-    const now = this.ctx.currentTime;
-    const windowStart = now - dur;
-
-    // Extract hits from the last cycle window
-    const newHits = this.pendingDrumHits.filter((h) => h.timeSec >= windowStart);
-
-    if (!this.drumIsPlaying) {
-      this.loopStartTime = now;
-      this.lastScheduledPhase = 0;
-      this.drumIsPlaying = true;
-      this.drumHits = [];
+  commitDrumLoop(): { addedCount: number; totalCount: number; durationSec: number } {
+    if (!this.ctx) {
+      return { addedCount: 0, totalCount: 0, durationSec: 0 };
     }
 
-    // Convert hits to phase offsets
-    for (const hit of newHits) {
+    const now = this.ctx.currentTime;
+    if (this.pendingDrumHits.length === 0) {
+      return {
+        addedCount: 0,
+        totalCount: this.drumHits.length,
+        durationSec: this.activeDrumLoopDuration,
+      };
+    }
+
+    // Play feedback audio cue
+    this.playSwipeChime('drum');
+
+    const beatSec = 60 / this.bpm;
+
+    if (!this.drumIsPlaying) {
+      // First loop creation: dynamically compute loop duration from actual phrase!
+      const phraseDuration = Math.max(0.6, now - this.drumPhraseStartTime);
+      // Snap to musical beats (min 2 beats)
+      let beats = Math.max(2, Math.round(phraseDuration / beatSec));
+      if (beats === 3) beats = 4;
+      else if (beats >= 5 && beats <= 7) beats = 8;
+      else if (beats >= 9 && beats <= 14) beats = 16;
+
+      this.activeDrumLoopDuration = beats * beatSec;
+      this.loopStartTime = this.drumPhraseStartTime;
+      this.drumHits = [];
+      this.lastScheduledPhase = 0;
+      this.drumIsPlaying = true;
+    }
+
+    const dur = this.activeDrumLoopDuration;
+    let addedCount = 0;
+
+    for (const hit of this.pendingDrumHits) {
       const phase = ((hit.timeSec - this.loopStartTime) % dur + dur) % dur;
       this.drumHits.push({
         fingerId: hit.fingerId,
         velocity: hit.velocity,
         phaseSec: phase,
       });
+      addedCount++;
     }
 
-    // Clear pending so we don't duplicate on next swipe
     this.pendingDrumHits = [];
-
-    return { addedCount: newHits.length, totalCount: this.drumHits.length };
+    return {
+      addedCount,
+      totalCount: this.drumHits.length,
+      durationSec: this.activeDrumLoopDuration,
+    };
   }
 
   clearDrumLoop(): void {
     this.drumHits = [];
     this.pendingDrumHits = [];
     this.drumIsPlaying = false;
+    this.drumPhraseStartTime = 0;
+    this.lastDrumHitTime = 0;
   }
 
-  // ==================== SYNTH LOOPER ====================
+  // ==================== SYNTH LOOPER (5-SEC PHRASE CAPTURE) ====================
 
+  /**
+   * Called while Theremin is actively sounding (fist closed).
+   * Automatically marks phrase start and tracks activity.
+   */
   markSynthActive(): void {
-    // Activity marker
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    // If more than 5.0 seconds passed since last sound, start a fresh phrase
+    if (!this.synthIsCapturing || now - this.lastSynthActiveTime > 5.0) {
+      this.synthPhraseStartTime = now;
+      this.synthIsCapturing = true;
+    }
+    this.lastSynthActiveTime = now;
+  }
+
+  isSynthCapturing(): boolean {
+    if (!this.ctx) return false;
+    return this.synthIsCapturing && this.ctx.currentTime - this.lastSynthActiveTime <= 5.0;
   }
 
   /**
-   * Called when Right Hand swipes Right:
-   * Slices the last loop bar from circular buffer and overdubs it as a looping layer.
+   * Commits the recently played Theremin phrase as a looping audio layer.
+   * Can be called multiple times to overdub and stack harmonies!
    */
-  commitSynthLoop(): { layerIndex: number; totalLayers: number } {
+  commitSynthLoop(): { layerIndex: number; totalLayers: number; durationSec: number } {
     if (
       !this.ctx ||
       !this.masterDestination ||
       !this.circularBufferL ||
       !this.circularBufferR
     ) {
-      return { layerIndex: 0, totalLayers: 0 };
+      return { layerIndex: 0, totalLayers: 0, durationSec: 0 };
     }
 
-    const dur = this.getLoopDurationSec();
+    const now = this.ctx.currentTime;
+    const timeSinceActive = now - this.lastSynthActiveTime;
+
+    // Check if user played synth within the last 6 seconds
+    if (this.synthPhraseStartTime === 0 || timeSinceActive > 6.0) {
+      return {
+        layerIndex: 0,
+        totalLayers: this.synthLayers.length,
+        durationSec: this.activeSynthLoopDuration,
+      };
+    }
+
+    // Play feedback audio cue
+    this.playSwipeChime('synth');
+
+    const beatSec = 60 / this.bpm;
+    const phraseDuration = Math.max(0.8, now - this.synthPhraseStartTime);
+
+    // Snap to musical beats
+    let beats = Math.max(2, Math.round(phraseDuration / beatSec));
+    if (beats === 3) beats = 4;
+    else if (beats >= 5 && beats <= 7) beats = 8;
+    else if (beats >= 9 && beats <= 14) beats = 16;
+
+    const dur = beats * beatSec;
+    this.activeSynthLoopDuration = dur;
+
     const sr = this.ctx.sampleRate;
     const numSamples = Math.floor(dur * sr);
     const cap = this.bufferCapacitySamples;
 
-    // Create an AudioBuffer for the layer
+    // Create an AudioBuffer for this layer
     const layerBuffer = this.ctx.createBuffer(2, numSamples, sr);
     const outL = layerBuffer.getChannelData(0);
     const outR = layerBuffer.getChannelData(1);
 
-    // Read the last `numSamples` backwards from writeIndex
     const startIdx = (this.writeIndex - numSamples + cap) % cap;
 
     for (let i = 0; i < numSamples; i++) {
@@ -202,14 +325,12 @@ export class AirLooper {
       outR[i] = this.circularBufferR[idx];
     }
 
-    // 12ms crossfade at loop boundary to guarantee zero click/pop
-    const crossfadeSamples = Math.min(Math.floor(sr * 0.012), Math.floor(numSamples * 0.1));
+    // 15ms crossfade at loop seam
+    const crossfadeSamples = Math.min(Math.floor(sr * 0.015), Math.floor(numSamples * 0.1));
     for (let i = 0; i < crossfadeSamples; i++) {
-      const t = i / crossfadeSamples; // 0 to 1
-      // Head fades in
+      const t = i / crossfadeSamples;
       outL[i] *= t;
       outR[i] *= t;
-      // Tail fades out
       const tailIdx = numSamples - 1 - i;
       outL[tailIdx] *= t;
       outR[tailIdx] *= t;
@@ -226,7 +347,6 @@ export class AirLooper {
     source.connect(layerGain);
     layerGain.connect(this.masterDestination);
 
-    // Calculate current loop phase so new layer starts in lockstep
     const currentPhase = this.getCurrentPhase();
     source.start(this.ctx.currentTime, currentPhase);
 
@@ -236,9 +356,13 @@ export class AirLooper {
       buffer: layerBuffer,
     });
 
+    // Reset phrase start for next overdub layer
+    this.synthPhraseStartTime = now;
+
     return {
       layerIndex: this.synthLayers.length,
       totalLayers: this.synthLayers.length,
+      durationSec: dur,
     };
   }
 
@@ -253,6 +377,9 @@ export class AirLooper {
       }
     }
     this.synthLayers = [];
+    this.synthPhraseStartTime = 0;
+    this.lastSynthActiveTime = 0;
+    this.synthIsCapturing = false;
   }
 
   clearAll(): void {
@@ -261,7 +388,7 @@ export class AirLooper {
   }
 
   /**
-   * Scheduled on every animation frame to trigger drum loop hits
+   * Scheduled on every animation frame to trigger drum loop hits in sync
    */
   update(): void {
     if (!this.ctx || !this.audioEngine || !this.drumIsPlaying || this.drumHits.length === 0) {
@@ -270,8 +397,6 @@ export class AirLooper {
 
     const currentPhase = this.getCurrentPhase();
     const prevPhase = this.lastScheduledPhase;
-
-    // Check if phase wrapped around
     const wrapped = currentPhase < prevPhase;
 
     for (const hit of this.drumHits) {
@@ -283,7 +408,6 @@ export class AirLooper {
           shouldTrigger = true;
         }
       } else {
-        // Wrapped around loop boundary
         if (p >= prevPhase || p < currentPhase) {
           shouldTrigger = true;
         }

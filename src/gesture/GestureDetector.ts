@@ -34,13 +34,10 @@ export class GestureDetector {
 
   private lastRSwipeTime = 0;
   private lastLSwipeTime = 0;
-  private swipeCooldownMs = 600;
+  private swipeCooldownMs = 450;
 
   private streakPoints: SwipeStreakPoint[] = [];
 
-  /**
-   * Resets gesture tracker states
-   */
   reset(): void {
     this.rClenchSmoothed = 0;
     this.lClenchSmoothed = 0;
@@ -51,9 +48,6 @@ export class GestureDetector {
     this.streakPoints = [];
   }
 
-  /**
-   * Computes 3D distance between two points
-   */
   private dist3D(a: Point3D, b: Point3D): number {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
@@ -61,9 +55,6 @@ export class GestureDetector {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
-  /**
-   * Calculates palm center and hand scale from MediaPipe landmarks
-   */
   computeHandGeometry(landmarks: Point3D[]): {
     palmCenter: Point3D;
     handScale: number;
@@ -81,14 +72,9 @@ export class GestureDetector {
     return { palmCenter, handScale };
   }
 
-  /**
-   * Calculates hand clench ratio (0 = fully open, 1 = tight fist)
-   * Uses normalized distances of fingertips to palm center.
-   */
   computeClenchRatio(landmarks: Point3D[]): number {
     const { palmCenter, handScale } = this.computeHandGeometry(landmarks);
 
-    // Tips: 4 (thumb), 8 (index), 12 (middle), 16 (ring), 20 (pinky)
     const tipIndices = [4, 8, 12, 16, 20];
     let totalDist = 0;
 
@@ -99,8 +85,6 @@ export class GestureDetector {
 
     const avgDist = (totalDist / tipIndices.length) / handScale;
 
-    // Open hand tip distance to palm center is ~1.30 - 1.65
-    // Closed fist tip distance is ~0.45 - 0.65
     const openDist = 1.35;
     const closedDist = 0.52;
 
@@ -109,7 +93,9 @@ export class GestureDetector {
   }
 
   /**
-   * Process a frame's hand landmarks to detect clench state and swipes
+   * Process a frame's hand landmarks to detect clench state and swipes.
+   * Uses peak-stroke search across the last 50-250ms so stationary frames
+   * prior to the swipe motion do not dilute the velocity.
    */
   process(
     handType: 'L' | 'R',
@@ -122,7 +108,6 @@ export class GestureDetector {
     const { palmCenter } = this.computeHandGeometry(landmarks);
     const rawClench = this.computeClenchRatio(landmarks);
 
-    // Smooth clench ratio
     const isRight = handType === 'R';
     let smoothed: number;
     let isClosed: boolean;
@@ -130,7 +115,6 @@ export class GestureDetector {
     if (isRight) {
       this.rClenchSmoothed = this.rClenchSmoothed * 0.65 + rawClench * 0.35;
       smoothed = this.rClenchSmoothed;
-      // Hysteresis threshold
       if (this.rIsClosed) {
         if (smoothed < 0.36) this.rIsClosed = false;
       } else {
@@ -148,45 +132,60 @@ export class GestureDetector {
       isClosed = this.lIsClosed;
     }
 
-    // Maintain history for swipe detection (window of ~200ms)
     const history = isRight ? this.rHistory : this.lHistory;
     history.push({ x: palmCenter.x, y: palmCenter.y, t: nowMs });
 
-    // Prune history older than 260ms
-    const cutoff = nowMs - 260;
+    // Prune history older than 300ms
+    const cutoff = nowMs - 300;
     while (history.length > 0 && history[0].t < cutoff) {
       history.shift();
     }
 
-    // Velocity computation over recent ~120-180ms
     let velX = 0;
     let velY = 0;
     let swipe: SwipeEvent | null = null;
 
-    if (history.length >= 3) {
-      const oldest = history[0];
-      const dt = (nowMs - oldest.t) / 1000;
-      if (dt > 0.06) {
-        velX = (palmCenter.x - oldest.x) / dt;
-        velY = (palmCenter.y - oldest.y) / dt;
-        const dx = palmCenter.x - oldest.x;
+    // Search for maximum horizontal displacement in the recent 45ms to 240ms window
+    if (history.length >= 2) {
+      let maxAbsDx = 0;
+      let bestDx = 0;
+      let bestDt = 0;
 
+      for (let i = history.length - 2; i >= 0; i--) {
+        const past = history[i];
+        const dt = (nowMs - past.t) / 1000;
+        if (dt >= 0.045 && dt <= 0.25) {
+          const dx = palmCenter.x - past.x;
+          if (Math.abs(dx) > maxAbsDx) {
+            maxAbsDx = Math.abs(dx);
+            bestDx = dx;
+            bestDt = dt;
+          }
+        }
+      }
+
+      if (bestDt > 0) {
+        velX = bestDx / bestDt;
         const lastSwipe = isRight ? this.lastRSwipeTime : this.lastLSwipeTime;
         const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
 
-        if (canSwipe) {
-          // Right Hand: Swipe Right (outward throw towards right side)
-          if (isRight && dx > 0.13 && velX > 1.35) {
+        // Threshold: at least 0.08 screen width moved and at least 0.80 width/sec velocity
+        if (canSwipe && maxAbsDx >= 0.08 && Math.abs(velX) >= 0.80) {
+          const direction: 'left' | 'right' = bestDx > 0 ? 'right' : 'left';
+          const color = isRight ? '#818cf8' : '#f43f5e';
+
+          if (isRight) {
             this.lastRSwipeTime = nowMs;
-            swipe = { hand: 'R', direction: 'right', timestampMs: nowMs };
-            this.addStreakPoints(history, '#818cf8', nowMs);
-          }
-          // Left Hand: Swipe Left (outward throw towards left side)
-          else if (!isRight && dx < -0.13 && velX < -1.35) {
+            swipe = { hand: 'R', direction, timestampMs: nowMs };
+          } else {
             this.lastLSwipeTime = nowMs;
-            swipe = { hand: 'L', direction: 'left', timestampMs: nowMs };
-            this.addStreakPoints(history, '#f43f5e', nowMs);
+            swipe = { hand: 'L', direction, timestampMs: nowMs };
           }
+
+          this.addStreakPoints(history, color, nowMs);
+          // Clear history after trigger to prevent backswing re-triggering
+          if (isRight) this.rHistory = [];
+          else this.lHistory = [];
         }
       }
     }
@@ -216,7 +215,6 @@ export class GestureDetector {
   }
 
   getStreakPoints(nowMs: number): SwipeStreakPoint[] {
-    // Fade and prune streaks older than 400ms
     this.streakPoints = this.streakPoints
       .map((p) => {
         const age = nowMs - p.timestampMs;

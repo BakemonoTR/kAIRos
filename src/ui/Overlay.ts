@@ -31,6 +31,12 @@ export interface RenderViewport {
   drawHeight: number;
 }
 
+interface ToastBanner {
+  text: string;
+  color: string;
+  startedAt: number;
+}
+
 export class Overlay {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -42,6 +48,12 @@ export class Overlay {
   private thereminState: ThereminState | null = null;
   private streakPoints: SwipeStreakPoint[] = [];
   private looperStatus: LooperStatus | null = null;
+
+  // Phrase capture live feedback
+  private isDrumCapturing = false;
+  private pendingDrumCount = 0;
+  private isSynthCapturing = false;
+  private toast: ToastBanner | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -64,6 +76,20 @@ export class Overlay {
 
   setLooperStatus(status: LooperStatus | null): void {
     this.looperStatus = status;
+  }
+
+  setCapturingState(drumCapturing: boolean, drumCount: number, synthCapturing: boolean): void {
+    this.isDrumCapturing = drumCapturing;
+    this.pendingDrumCount = drumCount;
+    this.isSynthCapturing = synthCapturing;
+  }
+
+  showToast(text: string, color = '#6366f1'): void {
+    this.toast = {
+      text,
+      color,
+      startedAt: performance.now(),
+    };
   }
 
   triggerHit(fingerId: FingerId, velocity: number, nowMs = performance.now()): void {
@@ -140,9 +166,6 @@ export class Overlay {
     this.ctx.restore();
   }
 
-  /**
-   * Reusable scene drawing so VideoRecorder can also render identical overlay onto recording canvas!
-   */
   drawSceneOnContext(
     ctx: CanvasRenderingContext2D,
     vp: RenderViewport,
@@ -153,7 +176,6 @@ export class Overlay {
     const toX = (nx: number) => vp.offsetX + nx * vp.drawWidth;
     const toY = (ny: number) => vp.offsetY + ny * vp.drawHeight;
 
-    // Prune expired ripples (> 340 ms)
     this.ripples = this.ripples.filter((r) => nowMs - r.startedAt < 340);
 
     // 1. Subtle hand skeleton lines
@@ -172,7 +194,6 @@ export class Overlay {
       }
       ctx.stroke();
 
-      // Joint micro-dots
       ctx.fillStyle = isThereminRight ? 'rgba(165, 180, 252, 0.6)' : 'rgba(226, 232, 240, 0.45)';
       for (let i = 0; i < lms.length; i++) {
         if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
@@ -185,7 +206,6 @@ export class Overlay {
 
     // 2. Fingertip colored dots + labels + hit ripples
     for (const [fingerId, fData] of mapped.fingers.entries()) {
-      // In theremin mode, right hand fingers (5..9) are controlled by fist Theremin
       if (this.appMode === 'theremin' && fingerId >= 5) {
         continue;
       }
@@ -199,7 +219,6 @@ export class Overlay {
       const isEnabled = slot.enabled;
       const isPressed = this.pressedSet.has(fingerId);
 
-      // Active hit ripples for this finger
       for (const ripple of this.ripples) {
         if (ripple.fingerId !== fingerId) continue;
         const progress = Math.min(1, (nowMs - ripple.startedAt) / 340);
@@ -234,7 +253,6 @@ export class Overlay {
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
 
-      // Small pill label above fingertip
       if (isEnabled) {
         ctx.shadowBlur = 0;
         const tag = meta.shortLabel;
@@ -269,9 +287,21 @@ export class Overlay {
       this.drawSwipeStreaks(ctx, vp);
     }
 
-    // 5. Looper HUD Overlay (Badges & Cues)
+    // 5. Looper HUD Overlay & Live Phrase Recording Badges
     if (this.appMode === 'theremin' && this.looperStatus) {
-      this.drawLooperHud(ctx, vp, this.looperStatus);
+      this.drawLooperHud(ctx, vp, this.looperStatus, nowMs);
+    }
+
+    // 6. Celebratory Toast Notification
+    if (this.toast) {
+      const elapsed = nowMs - this.toast.startedAt;
+      if (elapsed < 2400) {
+        const progress = elapsed / 2400;
+        const alpha = progress < 0.12 ? progress / 0.12 : progress > 0.75 ? (1 - progress) / 0.25 : 1;
+        this.drawToastBanner(ctx, vp, this.toast, alpha);
+      } else {
+        this.toast = null;
+      }
     }
   }
 
@@ -299,7 +329,6 @@ export class Overlay {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Pitch height indicator ticks
     const tickSteps = 8;
     ctx.fillStyle = 'rgba(165, 180, 252, 0.35)';
     for (let i = 0; i <= tickSteps; i++) {
@@ -307,12 +336,10 @@ export class Overlay {
       ctx.fillRect(x - 6, ty, 12, 1);
     }
 
-    // Theremin Glowing Energy Orb
     const clench = tState.clenchRatio;
     const isPlaying = tState.active;
 
     if (isPlaying) {
-      // Radiant energy glow
       const orbRadius = 24 + clench * 22;
       const grad = ctx.createRadialGradient(x, y, 4, x, y, orbRadius);
       grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
@@ -325,7 +352,6 @@ export class Overlay {
       ctx.arc(x, y, orbRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Rotating plasma ring
       const rotAngle = (nowMs * 0.004) % (Math.PI * 2);
       ctx.strokeStyle = '#a5b4fc';
       ctx.lineWidth = 3;
@@ -335,7 +361,6 @@ export class Overlay {
       ctx.arc(x, y, orbRadius * 1.15, rotAngle, rotAngle + Math.PI * 1.4);
       ctx.stroke();
 
-      // Outer ripple ring
       const pulse = Math.sin(nowMs * 0.01) * 6;
       ctx.strokeStyle = 'rgba(199, 210, 254, 0.6)';
       ctx.lineWidth = 1.5;
@@ -343,7 +368,6 @@ export class Overlay {
       ctx.arc(x, y, orbRadius * 1.35 + pulse, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Holographic Note Badge
       ctx.shadowBlur = 0;
       const noteLabel = `🎵 ${tState.noteName} • ${Math.round(tState.pitchHz)} Hz`;
       ctx.font = '700 13px Inter, system-ui, sans-serif';
@@ -366,14 +390,12 @@ export class Overlay {
       ctx.textBaseline = 'middle';
       ctx.fillText(noteLabel, x, by + bh / 2);
     } else {
-      // Reverb tail / idle ready state
       ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(x, y, 18, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Prompt to close fist
       ctx.font = '600 11px Inter, system-ui, sans-serif';
       const promptText = '✊ Yumruk Yap = Çal';
       const textW = ctx.measureText(promptText).width;
@@ -416,24 +438,38 @@ export class Overlay {
   private drawLooperHud(
     ctx: CanvasRenderingContext2D,
     vp: RenderViewport,
-    status: LooperStatus
+    status: LooperStatus,
+    nowMs: number
   ): void {
     ctx.save();
     const margin = 16;
-    const pillH = 32;
+    const pillH = 34;
+
+    // Pulse alpha for recording dots
+    const pulseAlpha = 0.5 + Math.sin(nowMs * 0.008) * 0.5;
 
     // Left Hand Drum Looper Badge
-    const drumText = `🥁 Sol El Davul: ${status.drumEventsCount} Vuruş ${
-      status.drumIsPlaying ? '▶ (Döngüde)' : '⏸'
-    } • (👈 Sola Swipe = Loop)`;
+    let drumText = '';
+    let drumBorderColor = '#64748b';
+    if (this.isDrumCapturing) {
+      drumText = `🔴 Kaydediliyor (${this.pendingDrumCount} Vuruş) • Swipe'la = Döngüle`;
+      drumBorderColor = `rgba(244, 63, 94, ${0.5 + pulseAlpha * 0.5})`;
+    } else if (status.drumIsPlaying) {
+      drumText = `🥁 Sol El Davul: ${status.drumEventsCount} Vuruş ▶ (Döngüde) • Swipe = Overdub`;
+      drumBorderColor = '#f43f5e';
+    } else {
+      drumText = `🥁 Sol El Davul (Çalmaya başla, swipe = döngüle)`;
+      drumBorderColor = '#475569';
+    }
+
     ctx.font = '600 12px Inter, system-ui, sans-serif';
-    const dW = ctx.measureText(drumText).width + 20;
+    const dW = ctx.measureText(drumText).width + 24;
     const dX = vp.offsetX + margin;
     const dY = vp.offsetY + vp.drawHeight - pillH - margin;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.strokeStyle = status.drumIsPlaying ? '#f43f5e' : '#64748b';
-    ctx.lineWidth = 1.5;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.strokeStyle = drumBorderColor;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.roundRect(dX, dY, dW, pillH, 8);
     ctx.fill();
@@ -442,19 +478,29 @@ export class Overlay {
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(drumText, dX + 10, dY + pillH / 2);
+    ctx.fillText(drumText, dX + 12, dY + pillH / 2);
 
     // Right Hand Synth Looper Badge
-    const synthText = `🎹 Sağ El Synth: ${status.synthLayersCount} Katman ${
-      status.synthLayersCount > 0 ? '▶ (Döngüde)' : '⏸'
-    } • (👉 Sağa Swipe = Loop)`;
-    const sW = ctx.measureText(synthText).width + 20;
+    let synthText = '';
+    let synthBorderColor = '#64748b';
+    if (this.isSynthCapturing) {
+      synthText = `🔴 Synth Kaydediliyor • Swipe'la = Döngüle`;
+      synthBorderColor = `rgba(129, 140, 248, ${0.5 + pulseAlpha * 0.5})`;
+    } else if (status.synthLayersCount > 0) {
+      synthText = `🎹 Synth: ${status.synthLayersCount} Katman ▶ (Döngüde) • Swipe = Overdub`;
+      synthBorderColor = '#818cf8';
+    } else {
+      synthText = `🎹 Sağ El Synth (Yumrukla çal, swipe = döngüle)`;
+      synthBorderColor = '#475569';
+    }
+
+    const sW = ctx.measureText(synthText).width + 24;
     const sX = vp.offsetX + vp.drawWidth - sW - margin;
     const sY = dY;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.strokeStyle = status.synthLayersCount > 0 ? '#818cf8' : '#64748b';
-    ctx.lineWidth = 1.5;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.strokeStyle = synthBorderColor;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.roundRect(sX, sY, sW, pillH, 8);
     ctx.fill();
@@ -463,7 +509,43 @@ export class Overlay {
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(synthText, sX + 10, sY + pillH / 2);
+    ctx.fillText(synthText, sX + 12, sY + pillH / 2);
+
+    ctx.restore();
+  }
+
+  private drawToastBanner(
+    ctx: CanvasRenderingContext2D,
+    vp: RenderViewport,
+    toast: ToastBanner,
+    alpha: number
+  ): void {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.font = '700 14px Inter, system-ui, sans-serif';
+    const textW = ctx.measureText(toast.text).width;
+    const bw = textW + 36;
+    const bh = 38;
+    const bx = vp.offsetX + (vp.drawWidth - bw) / 2;
+    const by = vp.offsetY + 22;
+
+    ctx.shadowColor = toast.color;
+    ctx.shadowBlur = 20;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.strokeStyle = toast.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(toast.text, bx + bw / 2, by + bh / 2);
 
     ctx.restore();
   }

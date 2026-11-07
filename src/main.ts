@@ -484,23 +484,37 @@ async function bootstrap(): Promise<void> {
 
           if (swipe) {
             store.emit('swipeEvent', swipe);
-            if (swipe.hand === 'R' && swipe.direction === 'right') {
+            if (swipe.hand === 'R') {
               const res = airLooper.commitSynthLoop();
-              store.emit(
-                'statusMessage',
-                res.totalLayers > 0
-                  ? `🎹 Synth döngüye eklendi (${res.totalLayers}. Katman)`
-                  : 'Henüz synth çalınmadı'
-              );
+              if (res.totalLayers > 0) {
+                overlay.showToast(
+                  `🔁 🎹 Synth Döngüsü Başlatıldı! (${res.totalLayers}. Katman • ${res.durationSec.toFixed(1)} sn)`,
+                  '#818cf8'
+                );
+                store.emit(
+                  'statusMessage',
+                  `🎹 Synth döngüye alındı (${res.totalLayers}. Katman • ${res.durationSec.toFixed(1)} sn)`
+                );
+              } else {
+                overlay.showToast('ℹ️ Henüz synth çalınmadı (Yumruk yapıp melodi çal)', '#94a3b8');
+                store.emit('statusMessage', 'Henüz synth çalınmadı (Yumruk yapıp melodi çal)');
+              }
               refreshLooperUi();
-            } else if (swipe.hand === 'L' && swipe.direction === 'left') {
+            } else if (swipe.hand === 'L') {
               const res = airLooper.commitDrumLoop();
-              store.emit(
-                'statusMessage',
-                res.totalCount > 0
-                  ? `🥁 Davul döngüye alındı (${res.totalCount} Vuruş)`
-                  : 'Henüz davul çalınmadı'
-              );
+              if (res.addedCount > 0) {
+                overlay.showToast(
+                  `🔁 🥁 Davul Döngüsü Başlatıldı! (${res.totalCount} Vuruş • ${res.durationSec.toFixed(1)} sn)`,
+                  '#f43f5e'
+                );
+                store.emit(
+                  'statusMessage',
+                  `🥁 Davul döngüye alındı (${res.totalCount} Vuruş • ${res.durationSec.toFixed(1)} sn)`
+                );
+              } else {
+                overlay.showToast('ℹ️ Henüz davul çalınmadı (Sol el parmaklarınla vur)', '#94a3b8');
+                store.emit('statusMessage', 'Henüz davul çalınmadı (Sol el parmaklarınla vur)');
+              }
               refreshLooperUi();
             }
           }
@@ -538,6 +552,11 @@ async function bootstrap(): Promise<void> {
         overlay.setAppMode(settings.appMode);
         overlay.setStreakPoints(gestureDetector.getStreakPoints(nowMs));
         overlay.setLooperStatus(airLooper.getStatus());
+        overlay.setCapturingState(
+          airLooper.isDrumCapturing(),
+          airLooper.getPendingDrumCount(),
+          airLooper.isSynthCapturing()
+        );
 
         const { taps, releases } = tapDetector.process(mapped, slots, settings, nowMs);
         for (const tap of taps) {
