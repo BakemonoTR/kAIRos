@@ -188,65 +188,56 @@ export class GestureDetector {
     let velY = 0;
     let swipe: SwipeEvent | null = null;
 
-    // Search for maximum horizontal and vertical displacements in the recent 45ms to 250ms window
-    if (history.length >= 2) {
-      let maxAbsDx = 0;
-      let bestDx = 0;
-      let bestDtX = 0;
+    let isLeftDrumSwipe = false;
+    let isRightSynthSwipe = false;
+    let isDownwardPresetSwipe = false;
 
-      let maxDy = 0;
-      let bestDy = 0;
-      let bestDtY = 0;
+    // Search for swipe strokes across any interval in the recent 30ms to 240ms window
+    if (history.length >= 2) {
+      let peakVelX = 0;
+      let peakVelY = 0;
 
       for (let i = history.length - 2; i >= 0; i--) {
         const past = history[i];
         const dt = (nowMs - past.t) / 1000;
-        if (dt >= 0.025 && dt <= 0.26) {
+        if (dt >= 0.030 && dt <= 0.24) {
           const dx = palmCenter.x - past.x;
-          if (Math.abs(dx) > maxAbsDx) {
-            maxAbsDx = Math.abs(dx);
-            bestDx = dx;
-            bestDtX = dt;
+          const dy = palmCenter.y - past.y;
+          const vX = dx / dt;
+          const vY = dy / dt;
+
+          if (Math.abs(vX) > Math.abs(peakVelX)) peakVelX = vX;
+          if (vY > peakVelY) peakVelY = vY;
+
+          // Left Drum Swipe: Left hand moving LEFT (towards edge)
+          // Near edge (x <= 0.25), requires only 0.025 distance & -0.30 vel so it triggers well before hitting frame border
+          const nearLeftEdge = palmCenter.x <= 0.25;
+          const minLeftDist = nearLeftEdge ? -0.025 : -0.032;
+          const minLeftVel = nearLeftEdge ? -0.30 : -0.38;
+
+          if (!isRight && dx <= minLeftDist && vX <= minLeftVel) {
+            isLeftDrumSwipe = true;
           }
 
-          const dy = palmCenter.y - past.y;
-          if (dy > maxDy) {
-            maxDy = dy;
-            bestDy = dy;
-            bestDtY = dt;
+          // Right Synth Swipe: Right hand moving RIGHT (towards outer edge)
+          if (isRight && dx >= 0.035 && vX >= 0.38) {
+            isRightSynthSwipe = true;
+          }
+
+          // Downward Preset Swipe: Right hand moving DOWN with open hand
+          if (isRight && smoothed < 0.42 && !isClosed && dy >= 0.075 && vY >= 0.55) {
+            isDownwardPresetSwipe = true;
           }
         }
       }
 
-      if (bestDtX > 0) velX = bestDx / bestDtX;
-      if (bestDtY > 0) velY = bestDy / bestDtY;
+      velX = peakVelX;
+      velY = peakVelY;
 
       const lastSwipe = isRight ? this.lastRSwipeTime : this.lastLSwipeTime;
       const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
 
       if (canSwipe) {
-        // 1) Downward swipe: STRICTLY for Right hand, and ONLY when hand is OPEN (not a fist)
-        // Natural flick down to cycle synth preset
-        const isDownwardPresetSwipe =
-          isRight &&
-          smoothed < 0.40 &&
-          !isClosed &&
-          maxDy >= 0.09 &&
-          velY >= 0.70;
-
-        // 2) Horizontal loop commit swipes:
-        // - Drums (Left hand): strictly swipe LEFT (ekranın soluna: bestDx <= -0.055, velX <= -0.58)
-        // - Synth (Right hand): strictly swipe RIGHT (ekranın sağına: bestDx >= 0.055, velX >= 0.58)
-        const isLeftDrumSwipe =
-          !isRight &&
-          bestDx <= -0.055 &&
-          velX <= -0.58;
-
-        const isRightSynthSwipe =
-          isRight &&
-          bestDx >= 0.055 &&
-          velX >= 0.58;
-
         if (isDownwardPresetSwipe) {
           const direction = 'down';
           const color = '#38bdf8'; // Sky cyan streak
