@@ -61,11 +61,11 @@ function runTests() {
   const p2 = gd.process('R', closedHand, 200);
   assert(p2.gestureState.isClosed, 'Closed fist should trigger isClosed = true');
 
-  // 3. Test Swipe Right on Right Hand
+  // 3. Test Right Wall Bump on Right Hand (armed in play zone -> hits right wall)
   const gdSwipe = new GestureDetector();
   let rightSwipe = null;
-  const tTimes = [1000, 1050, 1100, 1150];
-  const tXs = [0.30, 0.40, 0.50, 0.62];
+  const tTimes = [1000, 1050, 1100];
+  const tXs = [0.65, 0.78, 0.90];
   for (let i = 0; i < tTimes.length; i++) {
     const res = gdSwipe.process('R', createMockHand('open', tXs[i], 0.5), tTimes[i]);
     if (res.swipe) {
@@ -74,19 +74,19 @@ function runTests() {
     }
   }
 
-  assert(rightSwipe !== null, 'Right hand fast rightward motion should trigger swipe');
+  assert(rightSwipe !== null, 'Right hand hitting right wall after entering play zone should trigger commit');
   assert(rightSwipe?.direction === 'right', 'Swipe direction must be right');
   assert(rightSwipe?.hand === 'R', 'Swipe hand must be R');
 
-  // Cooldown test: swipe attempted 100ms later should be blocked
-  const cooldownRes = gdSwipe.process('R', createMockHand('open', 0.85, 0.5), 1200);
-  assert(cooldownRes.swipe === null, 'Swipe cooldown should prevent immediate re-trigger');
+  // Cooldown test: wall hit attempted 50ms later should be blocked
+  const cooldownRes = gdSwipe.process('R', createMockHand('open', 0.91, 0.5), 1150);
+  assert(cooldownRes.swipe === null, 'Wall bump cooldown should prevent immediate re-trigger');
 
-  // 4. Test Swipe Left on Left Hand
+  // 4. Test Left Wall Bump on Left Hand (armed in play zone -> hits left wall)
   const gdSwipeL = new GestureDetector();
   let leftSwipe = null;
-  const lTimes = [2000, 2050, 2100, 2150];
-  const lXs = [0.70, 0.60, 0.48, 0.35];
+  const lTimes = [2000, 2050, 2100];
+  const lXs = [0.35, 0.22, 0.10];
   for (let i = 0; i < lTimes.length; i++) {
     const res = gdSwipeL.process('L', createMockHand('open', lXs[i], 0.5), lTimes[i]);
     if (res.swipe) {
@@ -95,51 +95,61 @@ function runTests() {
     }
   }
 
-  assert(leftSwipe !== null, 'Left hand fast leftward motion should trigger swipe');
+  assert(leftSwipe !== null, 'Left hand hitting left wall after entering play zone should trigger commit');
   assert(leftSwipe?.direction === 'left', 'Left hand swipe direction must be left');
   assert(leftSwipe?.hand === 'L', 'Left hand swipe hand must be L');
 
-  // 4B. Test Left Hand Short Flick to Left Near Screen Edge
-  const gdEdge = new GestureDetector();
-  gdEdge.process('L', createMockHand('open', 0.20, 0.5), 2500);
-  gdEdge.process('L', createMockHand('open', 0.20, 0.5), 2530);
-  const edgeRes = gdEdge.process('L', createMockHand('open', 0.13, 0.5), 2580);
-  assert(edgeRes.swipe !== null, 'Short flick to left (0.07 distance near edge) must trigger swipe');
-  assert(edgeRes.swipe?.direction === 'left', 'Direction must be left');
-  assert(edgeRes.swipe?.hand === 'L', 'Hand must be L');
+  // 4B. Test Mid-Screen Horizontal Movement Must NOT Falsely Commit Loop
+  const gdMidMove = new GestureDetector();
+  gdMidMove.process('L', createMockHand('open', 0.50, 0.5), 2500);
+  gdMidMove.process('L', createMockHand('open', 0.42, 0.5), 2530);
+  const midMoveRes = gdMidMove.process('L', createMockHand('open', 0.30, 0.5), 2580);
+  assert(midMoveRes.swipe === null, 'Moving hand left in mid-screen without touching wall must NOT commit loop');
 
   // 4C. Test Left Hand Swiping RIGHT must NOT trigger drum swipe (drums only swipe left)
   const gdLeftRight = new GestureDetector();
-  gdLeftRight.process('L', createMockHand('open', 0.20, 0.5), 2600);
-  gdLeftRight.process('L', createMockHand('open', 0.20, 0.5), 2630);
-  const lrRes = gdLeftRight.process('L', createMockHand('open', 0.35, 0.5), 2680);
+  gdLeftRight.process('L', createMockHand('open', 0.25, 0.5), 2600);
+  gdLeftRight.process('L', createMockHand('open', 0.50, 0.5), 2630);
+  const lrRes = gdLeftRight.process('L', createMockHand('open', 0.90, 0.5), 2680);
   assert(lrRes.swipe === null, 'Left hand moving right must NOT trigger drum loop swipe');
 
   // 4D. Test Right Hand Swiping LEFT must NOT trigger synth swipe (synth only swipes right)
   const gdRightLeft = new GestureDetector();
   gdRightLeft.process('R', createMockHand('open', 0.65, 0.5), 2700);
-  gdRightLeft.process('R', createMockHand('open', 0.65, 0.5), 2730);
-  const rlRes = gdRightLeft.process('R', createMockHand('open', 0.48, 0.5), 2780);
+  gdRightLeft.process('R', createMockHand('open', 0.40, 0.5), 2730);
+  const rlRes = gdRightLeft.process('R', createMockHand('open', 0.10, 0.5), 2780);
   assert(rlRes.swipe === null, 'Right hand moving left must NOT trigger synth loop swipe');
 
-  // 4E. Test Left Hand Flick at x = 0.20 (matching user photo)
-  const gdUserEdge = new GestureDetector();
-  gdUserEdge.process('L', createMockHand('open', 0.20, 0.5), 3300);
-  gdUserEdge.process('L', createMockHand('open', 0.20, 0.5), 3330);
-  const userEdgeRes = gdUserEdge.process('L', createMockHand('open', 0.17, 0.5), 3380);
-  assert(userEdgeRes.swipe !== null, 'Short flick at x=0.20 (matching user photo) must trigger left drum swipe');
-  assert(userEdgeRes.swipe?.direction === 'left', 'Direction must be left');
+  // 4E. Test Arm/Wrist Edge Touching Wall While Hand/Fingers Are Inside Frame Must NOT Trigger Commit
+  const gdArmEdge = new GestureDetector();
+  // First arm the left hand inside the play zone
+  gdArmEdge.process('L', createMockHand('open', 0.30, 0.5), 3300);
+  // Now create a posture where wrist/forearm (0,1,2) is against the left border (x=0.03)
+  // while knuckles and fingertips are inside at x=0.18
+  const armAtLeftBorder = createMockHand('open', 0.18, 0.5);
+  armAtLeftBorder[0].x = 0.03; // wrist at left camera edge
+  armAtLeftBorder[1].x = 0.05;
+  armAtLeftBorder[2].x = 0.07;
+  const armLeftRes = gdArmEdge.process('L', armAtLeftBorder, 3360);
+  assert(armLeftRes.swipe === null, 'Forearm/wrist touching left camera edge while fingers are inside must NOT trigger loop commit');
 
-  // 5. Test Sudden Flick after Stationary Hand (Peak-stroke / no velocity dilution bug)
-  const gdFlick = new GestureDetector();
-  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3000);
-  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3050);
-  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3100);
-  gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3150);
-  // Sudden flick to left: 0.50 -> 0.38 in 60ms (velocity = 2.0/s, dx = -0.12)
-  const flickRes = gdFlick.process('L', createMockHand('open', 0.38, 0.5), 3210);
-  assert(flickRes.swipe !== null, 'Sudden flick after stationary hold must trigger swipe without velocity dilution');
-  assert(flickRes.swipe?.hand === 'L', 'Flick hand must be L');
+  // Same for right arm entering from right camera edge (wrist at x=0.97, fingers at x=0.82)
+  gdArmEdge.process('R', createMockHand('open', 0.70, 0.5), 3400);
+  const armAtRightBorder = createMockHand('open', 0.82, 0.5);
+  armAtRightBorder[0].x = 0.97; // wrist at right camera edge
+  armAtRightBorder[1].x = 0.95;
+  armAtRightBorder[2].x = 0.93;
+  const armRightRes = gdArmEdge.process('R', armAtRightBorder, 3460);
+  assert(armRightRes.swipe === null, 'Forearm/wrist touching right camera edge while fingers are inside must NOT trigger loop commit');
+
+  // 5. Test Unarmed Hand Entering Frame from Camera Border Must NOT Trigger Until Entering Play Zone First
+  const gdUnarmed = new GestureDetector();
+  const spawnAtEdgeRes = gdUnarmed.process('L', createMockHand('open', 0.08, 0.5), 3500);
+  assert(spawnAtEdgeRes.swipe === null, 'Hand appearing at screen edge before entering play zone must NOT trigger commit');
+  // Enter play zone (x >= 0.22) to arm, then hit left wall (x <= 0.13)
+  gdUnarmed.process('L', createMockHand('open', 0.28, 0.5), 3560);
+  const armedHitRes = gdUnarmed.process('L', createMockHand('open', 0.09, 0.5), 3620);
+  assert(armedHitRes.swipe !== null, 'Hand hitting left wall after arming in play zone must trigger commit');
 
   // 6. Test ThereminEngine Pitch Computation
   const te = new ThereminEngine();

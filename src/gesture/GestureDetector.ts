@@ -36,9 +36,11 @@ export class GestureDetector {
   private lastLSwipeTime = 0;
   private swipeCooldownMs = 320;
 
-  // Wall bump state ("duvara çarptırma")
-  private leftWallArmed = true;
-  private rightWallArmed = true;
+  // Wall bump state ("duvara çarptırma") — starts disarmed so an arm entering from the camera edge never false-triggers
+  private leftWallArmed = false;
+  private rightWallArmed = false;
+  private lastLeftSeenMs = 0;
+  private lastRightSeenMs = 0;
   private lastLeftWallTime = 0;
   private lastRightWallTime = 0;
   private wallCooldownMs = 450;
@@ -52,8 +54,10 @@ export class GestureDetector {
     this.lIsClosed = false;
     this.rHistory = [];
     this.lHistory = [];
-    this.leftWallArmed = true;
-    this.rightWallArmed = true;
+    this.leftWallArmed = false;
+    this.rightWallArmed = false;
+    this.lastLeftSeenMs = 0;
+    this.lastRightSeenMs = 0;
     this.lastLeftWallTime = 0;
     this.lastRightWallTime = 0;
     this.streakPoints = [];
@@ -195,30 +199,51 @@ export class GestureDetector {
       history.shift();
     }
 
-    // Compute bounds across all landmarks
-    let minX = palmCenter.x;
-    let maxX = palmCenter.x;
-    for (let i = 0; i < landmarks.length; i++) {
-      const lx = landmarks[i].x;
-      if (lx < minX) minX = lx;
-      if (lx > maxX) maxX = lx;
-    }
+    // Compute Hand-Only Core (Knuckles 5,9,13,17 + Fingertips 8,12,16,20), strictly excluding Wrist/Forearm (0,1,2)!
+    // This ensures that the edge of the user's arm/wrist touching the camera border never triggers a wall commit.
+    const wrist = landmarks[0] ?? palmCenter;
+    const k5 = landmarks[5] ?? palmCenter;
+    const k9 = landmarks[9] ?? palmCenter;
+    const k13 = landmarks[13] ?? palmCenter;
+    const k17 = landmarks[17] ?? palmCenter;
+    const t8 = landmarks[8] ?? palmCenter;
+    const t12 = landmarks[12] ?? palmCenter;
+    const t16 = landmarks[16] ?? palmCenter;
+    const t20 = landmarks[20] ?? palmCenter;
 
-    // Wall Bump Detection ("Duvara Çarptırma")
+    const knuckleCenterX = (k5.x + k9.x + k13.x + k17.x) * 0.25;
+    const knuckleCenterY = (k5.y + k9.y + k13.y + k17.y) * 0.25;
+    const fingerCenterX = (t8.x + t12.x + t16.x + t20.x) * 0.25;
+    const fingerCenterY = (t8.y + t12.y + t16.y + t20.y) * 0.25;
+
+    const handCoreX = 0.5 * knuckleCenterX + 0.5 * fingerCenterX;
+    const handCoreY = 0.5 * knuckleCenterY + 0.5 * fingerCenterY;
+
+    // Wall Bump Detection ("Sadece El Duvara Çarptığında Kaydet - Kol Kenarını Yoksay")
     let isLeftWallBump = false;
     let isRightWallBump = false;
 
     if (!isRight) {
-      // Left hand arming: re-arm when hand is in the playing area
-      if (palmCenter.x >= 0.22) {
+      if (this.lastLeftSeenMs > 0 && nowMs - this.lastLeftSeenMs > 400) {
+        this.leftWallArmed = false;
+      }
+      this.lastLeftSeenMs = nowMs;
+      // Left hand arming: re-arm only when the hand core is inside the playing area
+      if (handCoreX >= 0.22 && fingerCenterX >= 0.20) {
         this.leftWallArmed = true;
       }
-      // Left wall hit: hand hits or reaches the left edge of the camera
-      const canBumpLeft = nowMs - this.lastLSwipeTime > this.wallCooldownMs && nowMs - this.lastLeftWallTime > this.wallCooldownMs;
+      // Guard against forearm/wrist sticking into left edge while fingers are further inside screen
+      const isLeftArmLeading = wrist.x < fingerCenterX - 0.035 && fingerCenterX > 0.10;
+      const canBumpLeft =
+        nowMs - this.lastLSwipeTime > this.wallCooldownMs &&
+        nowMs - this.lastLeftWallTime > this.wallCooldownMs;
       if (
         this.leftWallArmed &&
-        (minX <= 0.12 || palmCenter.x <= 0.16) &&
-        palmCenter.y >= 0.25 &&
+        !isLeftArmLeading &&
+        handCoreX <= 0.13 &&
+        fingerCenterX <= 0.13 &&
+        handCoreY >= 0.25 &&
+        handCoreY <= 0.85 &&
         canBumpLeft
       ) {
         isLeftWallBump = true;
@@ -227,15 +252,25 @@ export class GestureDetector {
         this.lastLSwipeTime = nowMs;
       }
     } else {
-      // Right hand arming: re-arm when hand is in the playing area
-      if (palmCenter.x <= 0.78) {
+      if (this.lastRightSeenMs > 0 && nowMs - this.lastRightSeenMs > 400) {
+        this.rightWallArmed = false;
+      }
+      this.lastRightSeenMs = nowMs;
+      // Right hand arming: re-arm only when the hand core is inside the playing area
+      if (handCoreX <= 0.78 && fingerCenterX <= 0.80) {
         this.rightWallArmed = true;
       }
-      // Right wall hit: hand hits or reaches the right edge of the camera
-      const canBumpRight = nowMs - this.lastRSwipeTime > this.wallCooldownMs && nowMs - this.lastRightWallTime > this.wallCooldownMs;
+      // Guard against forearm/wrist sticking into right edge while fingers are further inside screen
+      const isRightArmLeading = wrist.x > fingerCenterX + 0.035 && fingerCenterX < 0.90;
+      const canBumpRight =
+        nowMs - this.lastRSwipeTime > this.wallCooldownMs &&
+        nowMs - this.lastRightWallTime > this.wallCooldownMs;
       if (
         this.rightWallArmed &&
-        (maxX >= 0.88 || palmCenter.x >= 0.84) &&
+        !isRightArmLeading &&
+        handCoreX >= 0.87 &&
+        fingerCenterX >= 0.87 &&
+        handCoreY <= 0.85 &&
         canBumpRight
       ) {
         isRightWallBump = true;
@@ -253,9 +288,9 @@ export class GestureDetector {
       swipe = { hand: 'L', direction: 'left', timestampMs: nowMs };
       this.addStreakPoints(
         [
-          { x: 0.08, y: palmCenter.y, t: nowMs },
-          { x: 0.04, y: palmCenter.y, t: nowMs },
-          { x: 0.01, y: palmCenter.y, t: nowMs },
+          { x: 0.08, y: handCoreY, t: nowMs },
+          { x: 0.04, y: handCoreY, t: nowMs },
+          { x: 0.01, y: handCoreY, t: nowMs },
         ],
         '#39ff14',
         nowMs
@@ -265,9 +300,9 @@ export class GestureDetector {
       swipe = { hand: 'R', direction: 'right', timestampMs: nowMs };
       this.addStreakPoints(
         [
-          { x: 0.92, y: palmCenter.y, t: nowMs },
-          { x: 0.96, y: palmCenter.y, t: nowMs },
-          { x: 0.99, y: palmCenter.y, t: nowMs },
+          { x: 0.92, y: handCoreY, t: nowMs },
+          { x: 0.96, y: handCoreY, t: nowMs },
+          { x: 0.99, y: handCoreY, t: nowMs },
         ],
         '#39ff14',
         nowMs
@@ -275,11 +310,10 @@ export class GestureDetector {
       this.rHistory = [];
     }
 
-    let isLeftDrumSwipe = false;
-    let isRightSynthSwipe = false;
     let isDownwardPresetSwipe = false;
 
-    // Search for swipe strokes across any interval in the recent 30ms to 240ms window
+    // Search for downward preset swipe across any interval in the recent 30ms to 240ms window
+    // Note: Horizontal mid-screen velocity swipes are intentionally disabled so ONLY actual hand-to-wall contact saves loops!
     if (!swipe && history.length >= 2) {
       let peakVelX = 0;
       let peakVelY = 0;
@@ -296,20 +330,6 @@ export class GestureDetector {
           if (Math.abs(vX) > Math.abs(peakVelX)) peakVelX = vX;
           if (vY > peakVelY) peakVelY = vY;
 
-          // Left Drum Swipe: Left hand moving LEFT (towards edge)
-          const nearLeftEdge = palmCenter.x <= 0.25;
-          const minLeftDist = nearLeftEdge ? -0.025 : -0.032;
-          const minLeftVel = nearLeftEdge ? -0.30 : -0.38;
-
-          if (!isRight && palmCenter.y >= 0.25 && dx <= minLeftDist && vX <= minLeftVel) {
-            isLeftDrumSwipe = true;
-          }
-
-          // Right Synth Swipe: Right hand moving RIGHT (towards outer edge)
-          if (isRight && dx >= 0.035 && vX >= 0.38) {
-            isRightSynthSwipe = true;
-          }
-
           // Downward Preset Swipe: Right hand moving DOWN with open hand
           if (isRight && smoothed < 0.42 && !isClosed && dy >= 0.075 && vY >= 0.55) {
             isDownwardPresetSwipe = true;
@@ -323,32 +343,14 @@ export class GestureDetector {
       const lastSwipe = isRight ? this.lastRSwipeTime : this.lastLSwipeTime;
       const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
 
-      if (canSwipe) {
-        if (isDownwardPresetSwipe) {
-          const direction = 'down';
-          const color = '#38bdf8'; // Sky cyan streak
-          this.lastRSwipeTime = nowMs;
-          this.lastRightWallTime = nowMs;
-          swipe = { hand: 'R', direction, timestampMs: nowMs };
-          this.addStreakPoints(history, color, nowMs);
-          this.rHistory = [];
-        } else if (isRightSynthSwipe) {
-          const direction = 'right';
-          const color = '#818cf8'; // Indigo streak
-          this.lastRSwipeTime = nowMs;
-          this.lastRightWallTime = nowMs;
-          swipe = { hand: 'R', direction, timestampMs: nowMs };
-          this.addStreakPoints(history, color, nowMs);
-          this.rHistory = [];
-        } else if (isLeftDrumSwipe) {
-          const direction = 'left';
-          const color = '#f43f5e'; // Rose streak
-          this.lastLSwipeTime = nowMs;
-          this.lastLeftWallTime = nowMs;
-          swipe = { hand: 'L', direction, timestampMs: nowMs };
-          this.addStreakPoints(history, color, nowMs);
-          this.lHistory = [];
-        }
+      if (canSwipe && isDownwardPresetSwipe) {
+        const direction = 'down';
+        const color = '#38bdf8'; // Sky cyan streak
+        this.lastRSwipeTime = nowMs;
+        this.lastRightWallTime = nowMs;
+        swipe = { hand: 'R', direction, timestampMs: nowMs };
+        this.addStreakPoints(history, color, nowMs);
+        this.rHistory = [];
       }
     }
 
