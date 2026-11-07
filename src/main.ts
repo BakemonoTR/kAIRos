@@ -496,8 +496,8 @@ async function bootstrap(): Promise<void> {
             }
             prevPalmL = { x: gestureState.palmCenter.x, y: gestureState.palmCenter.y };
 
-            // Only suppress when moving rapidly to the left (actual swipe flick) or extreme gross speed
-            if (gestureState.velocityX < -0.55 || palmSpeed > 0.65) {
+            // Only suppress when moving rapidly to the left, near the wall, or high gross speed
+            if (gestureState.palmCenter.x <= 0.20 || gestureState.velocityX < -0.45 || palmSpeed > 0.65) {
               isLeftFastMoving = true;
             }
           }
@@ -514,22 +514,23 @@ async function bootstrap(): Promise<void> {
                     store.updateSettings({ thereminPreset: nextPreset.preset });
                     selThereminPreset.value = nextPreset.preset;
                     theremin.playPresetChangeChime();
-                    overlay.showToast(`🎛️ Synth Sesi: ${nextPreset.name}`, '#38bdf8');
+                    overlay.showToast(`🎛️ SYNTH SESİ: ${nextPreset.name.toUpperCase()}`, '#38bdf8');
                     store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
                   }
                 } else if (swipe.direction === 'right') {
-                  // Horizontal swipe to the right on right hand: silence immediately so pitch sweep isn't audible
+                  // Wall bump / swipe to the right on right hand
+                  overlay.triggerWallBump('R', nowMs);
                   theremin.silence();
                   const res = airLooper.commitSynthLoop();
                   if (res.totalLayers > 0) {
-                    const bars = Math.round(res.beatsCount / 4);
+                    const bars = Math.max(1, Math.round(res.beatsCount / 4));
                     overlay.showToast(
-                      `🔁 🎹 Synth: ${res.beatsCount} Vuruş (${bars} Bar • Katman ${res.totalLayers})`,
-                      '#818cf8'
+                      `🔁 🎹 SYNTH: ${res.beatsCount} VURUŞLUK DÖNGÜ (${bars} ÖLÇÜ • KATMAN ${res.totalLayers})`,
+                      '#39ff14'
                     );
                     store.emit(
                       'statusMessage',
-                      `🎹 Synth döngüye alındı (${res.beatsCount} Vuruş • ${bars} Bar • ${res.durationSec.toFixed(1)} sn)`
+                      `🎹 Synth döngüye alındı (${res.beatsCount} Vuruş • ${bars} Ölçü • ${res.durationSec.toFixed(1)} sn)`
                     );
                   } else {
                     overlay.showToast('ℹ️ Henüz synth çalınmadı (Yumruk yapıp melodi çal)', '#94a3b8');
@@ -538,17 +539,19 @@ async function bootstrap(): Promise<void> {
                   refreshLooperUi();
                 }
               } else if (swipe.hand === 'L' && swipe.direction === 'left') {
-                leftLockoutUntilMs = nowMs + 200; // Brief 200ms follow-through lockout
+                // Wall bump / swipe to the left on left hand
+                overlay.triggerWallBump('L', nowMs);
+                leftLockoutUntilMs = nowMs + 280; // Lockout to prevent post-bump tap noise
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
-                  const bars = Math.round(res.beatsCount / 4);
+                  const bars = Math.max(1, Math.round(res.beatsCount / 4));
                   overlay.showToast(
-                    `🔁 🥁 Davul: ${res.beatsCount} Vuruş (${bars} Bar • ${res.totalCount} Vuruş)`,
-                    '#f43f5e'
+                    `🔁 🥁 DAVUL: ${res.beatsCount} VURUŞLUK DÖNGÜ (${bars} ÖLÇÜ • ${res.totalCount} NOTA)`,
+                    '#39ff14'
                   );
                   store.emit(
                     'statusMessage',
-                    `🥁 Davul döngüye alındı (${res.beatsCount} Vuruş • ${bars} Bar • ${res.durationSec.toFixed(1)} sn)`
+                    `🥁 Davul döngüye alındı (${res.beatsCount} Vuruş • ${bars} Ölçü • ${res.durationSec.toFixed(1)} sn)`
                   );
                 } else {
                   overlay.showToast('ℹ️ Henüz davul çalınmadı (Sol el parmaklarınla vur)', '#94a3b8');

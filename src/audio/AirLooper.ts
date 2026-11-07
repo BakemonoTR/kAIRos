@@ -120,19 +120,20 @@ export class AirLooper {
   }
 
   /**
-   * Quantizes elapsed beats in strict 2-bar multiples (8 beats per 2 bars):
-   * <= 2 bars (<= 8 beats)   -> 2 bars (8 beats)
-   * 2 < bars <= 4 (<= 16 beats) -> 4 bars (16 beats)
-   * 4 < bars <= 6 (<= 24 beats) -> 6 bars (24 beats)
-   * 6 < bars <= 8 (<= 32 beats) -> 8 bars (32 beats)
+   * Quantizes elapsed beats in strict 2-beat increments (2, 4, 6, 8, 10, 12, 16... beats):
+   * <= 2 beats -> 2 beats (half bar)
+   * 2 < beats <= 4 -> 4 beats (1 bar)
+   * 4 < beats <= 6 -> 6 beats
+   * 6 < beats <= 8 -> 8 beats (2 bars)
+   * 8 < beats <= 10 -> 10 beats
+   * 10 < beats <= 12 -> 12 beats (3 bars)
+   * 12 < beats <= 16 -> 16 beats (4 bars)
    */
   calculateQuantizedBeats(rawElapsedBeats: number): number {
-    const beatsPerBar = 4;
-    const rawBars = rawElapsedBeats / beatsPerBar;
-    // 0.25 bar tolerance for natural end-of-phrase release
-    const effectiveBars = Math.max(0.2, rawBars - 0.25);
-    const quantizedBars = Math.max(2, Math.ceil(effectiveBars / 2) * 2);
-    return quantizedBars * beatsPerBar;
+    // 0.25 beat tolerance for natural end-of-phrase release
+    const effectiveBeats = Math.max(0.4, rawElapsedBeats - 0.25);
+    const quantizedBeats = Math.max(2, Math.ceil(effectiveBeats / 2) * 2);
+    return quantizedBeats;
   }
 
   playSwipeChime(type: 'drum' | 'synth'): void {
@@ -522,18 +523,21 @@ export class AirLooper {
     const now = this.ctx ? this.ctx.currentTime : 0;
 
     // Master loop phase
-    const masterDuration = this.masterLoopDuration || beatSec * 8; // default 2 bars
-    const masterBars = Math.max(2, Math.round(masterDuration / (beatSec * 4)));
+    const masterDuration = this.masterLoopDuration || beatSec * 4;
+    const masterTotalBeats = Math.max(2, Math.round(masterDuration / beatSec));
+    const masterBars = Math.max(1, Math.round(masterTotalBeats / 4));
     const masterPhaseSec = this.getCurrentPhase();
-    const masterTotalBeats = masterPhaseSec / beatSec;
-    const masterBar = Math.min(masterBars, Math.floor(masterTotalBeats / 4) + 1);
-    const masterBeat = (Math.floor(masterTotalBeats) % 4) + 1;
+    const currentPhaseBeats = masterPhaseSec / beatSec;
+    const masterBar = Math.floor(currentPhaseBeats / 4) + 1;
+    const masterBeat = (Math.floor(currentPhaseBeats) % 4) + 1;
 
     // Drum phrase metrics
     let drumStatus: 'idle' | 'recording' | 'looping' = 'idle';
     let drumBar = 1;
     let drumBeat = 1;
-    let drumTargetBars = 2;
+    let drumTargetBeats = 2;
+    let drumTargetBars = 1;
+    let drumTotalBeats = masterTotalBeats;
     let drumTotalBars = masterBars;
 
     if (this.isDrumCapturing()) {
@@ -542,12 +546,15 @@ export class AirLooper {
       const elapsedBeats = elapsed / beatSec;
       drumBar = Math.floor(elapsedBeats / 4) + 1;
       drumBeat = (Math.floor(elapsedBeats) % 4) + 1;
-      drumTargetBars = this.calculateQuantizedBeats(elapsedBeats) / 4;
+      drumTargetBeats = this.calculateQuantizedBeats(elapsedBeats);
+      drumTargetBars = Math.max(1, Math.round(drumTargetBeats / 4));
+      drumTotalBeats = drumTargetBeats;
       drumTotalBars = drumTargetBars;
     } else if (this.drumIsPlaying) {
       drumStatus = 'looping';
       drumBar = masterBar;
       drumBeat = masterBeat;
+      drumTotalBeats = masterTotalBeats;
       drumTotalBars = masterBars;
     }
 
@@ -555,7 +562,9 @@ export class AirLooper {
     let synthStatus: 'idle' | 'recording' | 'looping' = 'idle';
     let synthBar = 1;
     let synthBeat = 1;
-    let synthTargetBars = 2;
+    let synthTargetBeats = 2;
+    let synthTargetBars = 1;
+    let synthTotalBeats = masterTotalBeats;
     let synthTotalBars = masterBars;
 
     if (this.isSynthCapturing()) {
@@ -564,12 +573,15 @@ export class AirLooper {
       const elapsedBeats = elapsed / beatSec;
       synthBar = Math.floor(elapsedBeats / 4) + 1;
       synthBeat = (Math.floor(elapsedBeats) % 4) + 1;
-      synthTargetBars = this.calculateQuantizedBeats(elapsedBeats) / 4;
+      synthTargetBeats = this.calculateQuantizedBeats(elapsedBeats);
+      synthTargetBars = Math.max(1, Math.round(synthTargetBeats / 4));
+      synthTotalBeats = synthTargetBeats;
       synthTotalBars = synthTargetBars;
     } else if (this.synthLayers.length > 0) {
       synthStatus = 'looping';
       synthBar = masterBar;
       synthBeat = masterBeat;
+      synthTotalBeats = masterTotalBeats;
       synthTotalBars = masterBars;
     }
 
@@ -581,7 +593,9 @@ export class AirLooper {
         beat: drumBeat,
         hitsCount: drumStatus === 'recording' ? this.pendingDrumHits.length : this.drumHits.length,
         targetBars: drumTargetBars,
+        targetBeats: drumTargetBeats,
         totalBars: drumTotalBars,
+        totalBeats: drumTotalBeats,
       },
       synth: {
         status: synthStatus,
@@ -589,13 +603,16 @@ export class AirLooper {
         beat: synthBeat,
         layersCount: this.synthLayers.length,
         targetBars: synthTargetBars,
+        targetBeats: synthTargetBeats,
         totalBars: synthTotalBars,
+        totalBeats: synthTotalBeats,
       },
       master: {
         active: this.isMasterLoopActive(),
         bar: masterBar,
         beat: masterBeat,
         totalBars: masterBars,
+        totalBeats: masterTotalBeats,
       },
     };
   }

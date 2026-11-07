@@ -153,14 +153,16 @@ function runTests() {
     )}Hz ${lowNote.noteName}, high: ${highNote.frequency.toFixed(1)}Hz ${highNote.noteName})`
   );
 
-  // 7. Test Musical Measure Quantization in 2-Bar Steps (8, 16, 24, 32 beats)
+  // 7. Test Musical Measure Quantization in 2-Beat Steps (2, 4, 6, 8, 10, 12, 16 beats)
   const al = new AirLooper();
-  assert(al.calculateQuantizedBeats(2.0) === 8, '2 beats phrase should quantize to 8 beats (2 bars min)');
-  assert(al.calculateQuantizedBeats(4.0) === 8, '4 beats (1 bar) should quantize to 8 beats (2 bars)');
+  assert(al.calculateQuantizedBeats(1.8) === 2, '1.8 beats phrase should quantize to 2 beats');
+  assert(al.calculateQuantizedBeats(2.0) === 2, '2 beats phrase should quantize to 2 beats');
+  assert(al.calculateQuantizedBeats(3.8) === 4, '3.8 beats phrase should quantize to 4 beats (1 bar)');
+  assert(al.calculateQuantizedBeats(4.2) === 4, '4.2 beats phrase should quantize to 4 beats (1 bar)');
+  assert(al.calculateQuantizedBeats(5.8) === 6, '5.8 beats phrase should quantize to 6 beats');
   assert(al.calculateQuantizedBeats(7.8) === 8, '7.8 beats phrase should quantize to 8 beats (2 bars)');
-  assert(al.calculateQuantizedBeats(10.0) === 16, '10 beats (exceeded 2 bars) should quantize to 16 beats (4 bars)');
-  assert(al.calculateQuantizedBeats(18.0) === 24, '18 beats (exceeded 4 bars) should quantize to 24 beats (6 bars)');
-  assert(al.calculateQuantizedBeats(26.0) === 32, '26 beats (exceeded 6 bars) should quantize to 32 beats (8 bars)');
+  assert(al.calculateQuantizedBeats(9.8) === 10, '9.8 beats phrase should quantize to 10 beats');
+  assert(al.calculateQuantizedBeats(11.8) === 12, '11.8 beats phrase should quantize to 12 beats (3 bars)');
 
   // 7B. Test Live Phrase Metrics per hand
   const metrics = al.getLivePhraseMetrics();
@@ -169,6 +171,24 @@ function runTests() {
   assert(metrics.master !== undefined, 'Live metrics must include master loop state');
   assert(metrics.drum.bar >= 1, 'Drum bar index must start at >= 1');
   assert(metrics.synth.bar >= 1, 'Synth bar index must start at >= 1');
+  assert(metrics.drum.targetBeats >= 2, 'Drum target beats must be >= 2');
+  assert(metrics.synth.targetBeats >= 2, 'Synth target beats must be >= 2');
+
+  // 7C. Test Left Wall Bump ("Sol Duvara Çarptırma")
+  const gdWallL = new GestureDetector();
+  gdWallL.process('L', createMockHand('open', 0.35, 0.5), 3500); // playing in zone
+  const wallLRes = gdWallL.process('L', createMockHand('open', 0.10, 0.5), 3600); // bump left wall
+  assert(wallLRes.swipe !== null, 'Hitting left wall (x=0.10) must trigger left loop commit');
+  assert(wallLRes.swipe?.hand === 'L', 'Left wall bump hand must be L');
+  assert(wallLRes.swipe?.direction === 'left', 'Left wall bump direction must be left');
+
+  // 7D. Test Right Wall Bump ("Sağ Duvara Çarptırma")
+  const gdWallR = new GestureDetector();
+  gdWallR.process('R', createMockHand('open', 0.65, 0.5), 3700); // playing in zone
+  const wallRRes = gdWallR.process('R', createMockHand('open', 0.90, 0.5), 3800); // bump right wall
+  assert(wallRRes.swipe !== null, 'Hitting right wall (x=0.90) must trigger right loop commit');
+  assert(wallRRes.swipe?.hand === 'R', 'Right wall bump hand must be R');
+  assert(wallRRes.swipe?.direction === 'right', 'Right wall bump direction must be right');
 
   // 8. Test Downward Swipe on Right Hand (Open hand)
   const gdDown = new GestureDetector();

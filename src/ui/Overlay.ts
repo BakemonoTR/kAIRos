@@ -56,6 +56,8 @@ export class Overlay {
   private pendingDrumCount = 0;
   private isSynthCapturing = false;
   private toast: ToastBanner | null = null;
+  private wallHitLeftMs = 0;
+  private wallHitRightMs = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -96,6 +98,14 @@ export class Overlay {
       color,
       startedAt: performance.now(),
     };
+  }
+
+  triggerWallBump(hand: 'L' | 'R', nowMs = performance.now()): void {
+    if (hand === 'L') {
+      this.wallHitLeftMs = nowMs;
+    } else {
+      this.wallHitRightMs = nowMs;
+    }
   }
 
   triggerHit(fingerId: FingerId, velocity: number, nowMs = performance.now()): void {
@@ -293,6 +303,9 @@ export class Overlay {
       this.drawSwipeStreaks(ctx, vp);
     }
 
+    // 4B. Wall Collision Shockwaves ("Duvara Çarptırma Efekti")
+    this.drawWallShockwaves(ctx, vp, nowMs);
+
     // 5. Looper HUD Overlay & Live Phrase Recording Badges
     if (this.appMode === 'theremin') {
       this.drawRetroDigitalHud(ctx, vp, nowMs);
@@ -440,6 +453,70 @@ export class Overlay {
     ctx.restore();
   }
 
+  private drawWallShockwaves(ctx: CanvasRenderingContext2D, vp: RenderViewport, nowMs: number): void {
+    // Left Wall Laser Shockwave
+    const elapsedL = nowMs - this.wallHitLeftMs;
+    if (elapsedL < 450) {
+      const progress = elapsedL / 450;
+      const alpha = (1 - progress) * 0.95;
+      const x = vp.offsetX + 2;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#39ff14';
+      ctx.lineWidth = 8 * (1 - progress * 0.5);
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 24;
+
+      ctx.beginPath();
+      ctx.moveTo(x, vp.offsetY);
+      ctx.lineTo(x, vp.offsetY + vp.drawHeight);
+      ctx.stroke();
+
+      this.drawDigitalText(
+        ctx,
+        '◄◄ SOL DUVAR ÇARPTI : DAVUL DÖNGÜLENDİ ◄◄',
+        vp.offsetX + 35,
+        vp.offsetY + vp.drawHeight / 2,
+        14,
+        '#39ff14',
+        'left'
+      );
+      ctx.restore();
+    }
+
+    // Right Wall Laser Shockwave
+    const elapsedR = nowMs - this.wallHitRightMs;
+    if (elapsedR < 450) {
+      const progress = elapsedR / 450;
+      const alpha = (1 - progress) * 0.95;
+      const x = vp.offsetX + vp.drawWidth - 2;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#39ff14';
+      ctx.lineWidth = 8 * (1 - progress * 0.5);
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 24;
+
+      ctx.beginPath();
+      ctx.moveTo(x, vp.offsetY);
+      ctx.lineTo(x, vp.offsetY + vp.drawHeight);
+      ctx.stroke();
+
+      this.drawDigitalText(
+        ctx,
+        '►► SAĞ DUVAR ÇARPTI : SYNTH DÖNGÜLENDİ ►►',
+        vp.offsetX + vp.drawWidth - 35,
+        vp.offsetY + vp.drawHeight / 2,
+        14,
+        '#39ff14',
+        'right'
+      );
+      ctx.restore();
+    }
+  }
+
   private drawRetroDigitalHud(
     ctx: CanvasRenderingContext2D,
     vp: RenderViewport,
@@ -461,12 +538,12 @@ export class Overlay {
     if (drumStatus === 'recording') {
       const bar = m ? m.drum.bar : 1;
       const beat = m ? m.drum.beat : 1;
-      const target = m ? m.drum.targetBars : 2;
+      const targetBeats = m ? m.drum.targetBeats : 2;
       const hits = m ? m.drum.hitsCount : this.pendingDrumCount;
       const recDot = isBlink ? '●' : '○';
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] ${recDot} REC :: BAR ${pad2(bar)} / BEAT ${pad2(beat)}  (HEDEF: ${pad2(target)} BAR)`,
+        `[L-DRUM] ${recDot} REC :: ${pad2(targetBeats)} VURUŞ HEDEF (ÖLÇÜ ${pad2(bar)} • VURUŞ ${pad2(beat)})`,
         xLeft,
         yLine1,
         15,
@@ -475,7 +552,7 @@ export class Overlay {
       );
       this.drawDigitalText(
         ctx,
-        `>> ${hits} VURUŞ | SOLA SWIPE = DÖNGÜLE <<`,
+        `>> ${hits} NOTA | ◄ SOL DUVARA ÇARPTIR = DÖNGÜLE <<`,
         xLeft,
         yLine2,
         13,
@@ -483,13 +560,13 @@ export class Overlay {
         'left'
       );
     } else if (drumStatus === 'looping') {
-      const bar = m ? m.drum.bar : 1;
-      const total = m ? m.drum.totalBars : 2;
+      const totalBeats = m ? m.drum.totalBeats : 2;
+      const totalBars = m ? m.drum.totalBars : 1;
       const beat = m ? m.drum.beat : 1;
       const hits = m ? m.drum.hitsCount : this.looperStatus?.drumEventsCount ?? 0;
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] PLAY ▶ :: BAR ${pad2(bar)}/${pad2(total)} • BEAT ${pad2(beat)}  [${hits} VURUŞ]`,
+        `[L-DRUM] PLAY ▶ :: ${pad2(totalBeats)} VURUŞ (${pad2(totalBars)} ÖLÇÜ) • VURUŞ ${pad2(beat)} [${hits} NOTA]`,
         xLeft,
         yLine1,
         15,
@@ -498,7 +575,7 @@ export class Overlay {
       );
       this.drawDigitalText(
         ctx,
-        `>> VURARAK EKLE | SOLA SWIPE = OVERDUB <<`,
+        `>> VURARAK EKLE | ◄ SOL DUVARA ÇARPTIR = OVERDUB <<`,
         xLeft,
         yLine2,
         13,
@@ -508,7 +585,7 @@ export class Overlay {
     } else {
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] HAZIR :: 2-BAR GRID [BEKLEMEDE]`,
+        `[L-DRUM] HAZIR :: 2-VURUŞ ADIM [BEKLEMEDE]`,
         xLeft,
         yLine1,
         15,
@@ -517,7 +594,7 @@ export class Overlay {
       );
       this.drawDigitalText(
         ctx,
-        `>> SOL EL PARMAKLARLA VUR VE ÇAL <<`,
+        `>> PARMAKLARLA VUR • ◄ SOL DUVARA ÇARPTIR = DÖNGÜLE <<`,
         xLeft,
         yLine2,
         13,
@@ -531,11 +608,11 @@ export class Overlay {
     if (synthStatus === 'recording') {
       const bar = m ? m.synth.bar : 1;
       const beat = m ? m.synth.beat : 1;
-      const target = m ? m.synth.targetBars : 2;
+      const targetBeats = m ? m.synth.targetBeats : 2;
       const recDot = isBlink ? '●' : '○';
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] ${recDot} REC :: BAR ${pad2(bar)} / BEAT ${pad2(beat)}  (HEDEF: ${pad2(target)} BAR)`,
+        `[R-SYNTH] ${recDot} REC :: ${pad2(targetBeats)} VURUŞ HEDEF (ÖLÇÜ ${pad2(bar)} • VURUŞ ${pad2(beat)})`,
         xRight,
         yLine1,
         15,
@@ -544,7 +621,7 @@ export class Overlay {
       );
       this.drawDigitalText(
         ctx,
-        `>> SAĞA SWIPE = DÖNGÜLE | AŞAĞI = SES DEĞİŞTİR <<`,
+        `>> SAĞ DUVARA ÇARPTIR ► = DÖNGÜLE | AŞAĞI = SES <<`,
         xRight,
         yLine2,
         13,
@@ -552,13 +629,13 @@ export class Overlay {
         'right'
       );
     } else if (synthStatus === 'looping') {
-      const bar = m ? m.synth.bar : 1;
-      const total = m ? m.synth.totalBars : 2;
+      const totalBeats = m ? m.synth.totalBeats : 2;
+      const totalBars = m ? m.synth.totalBars : 1;
       const beat = m ? m.synth.beat : 1;
       const layers = m ? m.synth.layersCount : this.looperStatus?.synthLayersCount ?? 0;
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] PLAY ▶ :: BAR ${pad2(bar)}/${pad2(total)} • BEAT ${pad2(beat)}  [KATMAN ${pad2(layers)}]`,
+        `[R-SYNTH] PLAY ▶ :: ${pad2(totalBeats)} VURUŞ (${pad2(totalBars)} ÖLÇÜ) • VURUŞ ${pad2(beat)} [KATMAN ${pad2(layers)}]`,
         xRight,
         yLine1,
         15,
@@ -567,7 +644,7 @@ export class Overlay {
       );
       this.drawDigitalText(
         ctx,
-        `>> YUMRUKLA ÇAL | SAĞA SWIPE = OVERDUB <<`,
+        `>> YUMRUKLA ÇAL | SAĞ DUVARA ÇARPTIR ► = OVERDUB <<`,
         xRight,
         yLine2,
         13,
@@ -577,7 +654,7 @@ export class Overlay {
     } else {
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] HAZIR :: 2-BAR GRID [BEKLEMEDE]`,
+        `[R-SYNTH] HAZIR :: 2-VURUŞ ADIM [BEKLEMEDE]`,
         xRight,
         yLine1,
         15,
@@ -586,7 +663,7 @@ export class Overlay {
       );
       this.drawDigitalText(
         ctx,
-        `>> YUMRUK YAP VE ÇAL | AŞAĞI SWIPE = SES <<`,
+        `>> YUMRUK YAP VE ÇAL • SAĞ DUVARA ÇARPTIR ► = DÖNGÜLE <<`,
         xRight,
         yLine2,
         13,
@@ -602,7 +679,7 @@ export class Overlay {
     if (m && m.master.active) {
       this.drawDigitalText(
         ctx,
-        `::: MASTER ${bpm} BPM | DÖNGÜ: ${pad2(m.master.totalBars)} BAR (BAR ${pad2(m.master.bar)}/${pad2(m.master.totalBars)} • VURUŞ ${pad2(m.master.beat)}) :::`,
+        `::: MASTER ${bpm} BPM | DÖNGÜ: ${pad2(m.master.totalBeats)} VURUŞ (${pad2(m.master.totalBars)} ÖLÇÜ) • VURUŞ ${pad2(m.master.beat)} :::`,
         xCenter,
         yTop,
         14,
@@ -612,7 +689,7 @@ export class Overlay {
     } else {
       this.drawDigitalText(
         ctx,
-        `::: BEATCAM THEREMIN LOOPER • 2-BAR ADIM • ${bpm} BPM :::`,
+        `::: BEATCAM DUVAR LOOPER • 2-VURUŞ ADIM • ${bpm} BPM :::`,
         xCenter,
         yTop,
         14,

@@ -36,6 +36,13 @@ export class GestureDetector {
   private lastLSwipeTime = 0;
   private swipeCooldownMs = 320;
 
+  // Wall bump state ("duvara çarptırma")
+  private leftWallArmed = true;
+  private rightWallArmed = true;
+  private lastLeftWallTime = 0;
+  private lastRightWallTime = 0;
+  private wallCooldownMs = 450;
+
   private streakPoints: SwipeStreakPoint[] = [];
 
   reset(): void {
@@ -45,6 +52,10 @@ export class GestureDetector {
     this.lIsClosed = false;
     this.rHistory = [];
     this.lHistory = [];
+    this.leftWallArmed = true;
+    this.rightWallArmed = true;
+    this.lastLeftWallTime = 0;
+    this.lastRightWallTime = 0;
     this.streakPoints = [];
   }
 
@@ -184,16 +195,91 @@ export class GestureDetector {
       history.shift();
     }
 
+    // Compute bounds across all landmarks
+    let minX = palmCenter.x;
+    let maxX = palmCenter.x;
+    for (let i = 0; i < landmarks.length; i++) {
+      const lx = landmarks[i].x;
+      if (lx < minX) minX = lx;
+      if (lx > maxX) maxX = lx;
+    }
+
+    // Wall Bump Detection ("Duvara Çarptırma")
+    let isLeftWallBump = false;
+    let isRightWallBump = false;
+
+    if (!isRight) {
+      // Left hand arming: re-arm when hand is in the playing area
+      if (palmCenter.x >= 0.22) {
+        this.leftWallArmed = true;
+      }
+      // Left wall hit: hand hits or reaches the left edge of the camera
+      const canBumpLeft = nowMs - this.lastLSwipeTime > this.wallCooldownMs && nowMs - this.lastLeftWallTime > this.wallCooldownMs;
+      if (
+        this.leftWallArmed &&
+        (minX <= 0.12 || palmCenter.x <= 0.16) &&
+        canBumpLeft
+      ) {
+        isLeftWallBump = true;
+        this.leftWallArmed = false;
+        this.lastLeftWallTime = nowMs;
+        this.lastLSwipeTime = nowMs;
+      }
+    } else {
+      // Right hand arming: re-arm when hand is in the playing area
+      if (palmCenter.x <= 0.78) {
+        this.rightWallArmed = true;
+      }
+      // Right wall hit: hand hits or reaches the right edge of the camera
+      const canBumpRight = nowMs - this.lastRSwipeTime > this.wallCooldownMs && nowMs - this.lastRightWallTime > this.wallCooldownMs;
+      if (
+        this.rightWallArmed &&
+        (maxX >= 0.88 || palmCenter.x >= 0.84) &&
+        canBumpRight
+      ) {
+        isRightWallBump = true;
+        this.rightWallArmed = false;
+        this.lastRightWallTime = nowMs;
+        this.lastRSwipeTime = nowMs;
+      }
+    }
+
     let velX = 0;
     let velY = 0;
     let swipe: SwipeEvent | null = null;
+
+    if (isLeftWallBump) {
+      swipe = { hand: 'L', direction: 'left', timestampMs: nowMs };
+      this.addStreakPoints(
+        [
+          { x: 0.08, y: palmCenter.y, t: nowMs },
+          { x: 0.04, y: palmCenter.y, t: nowMs },
+          { x: 0.01, y: palmCenter.y, t: nowMs },
+        ],
+        '#39ff14',
+        nowMs
+      );
+      this.lHistory = [];
+    } else if (isRightWallBump) {
+      swipe = { hand: 'R', direction: 'right', timestampMs: nowMs };
+      this.addStreakPoints(
+        [
+          { x: 0.92, y: palmCenter.y, t: nowMs },
+          { x: 0.96, y: palmCenter.y, t: nowMs },
+          { x: 0.99, y: palmCenter.y, t: nowMs },
+        ],
+        '#39ff14',
+        nowMs
+      );
+      this.rHistory = [];
+    }
 
     let isLeftDrumSwipe = false;
     let isRightSynthSwipe = false;
     let isDownwardPresetSwipe = false;
 
     // Search for swipe strokes across any interval in the recent 30ms to 240ms window
-    if (history.length >= 2) {
+    if (!swipe && history.length >= 2) {
       let peakVelX = 0;
       let peakVelY = 0;
 
@@ -210,7 +296,6 @@ export class GestureDetector {
           if (vY > peakVelY) peakVelY = vY;
 
           // Left Drum Swipe: Left hand moving LEFT (towards edge)
-          // Near edge (x <= 0.25), requires only 0.025 distance & -0.30 vel so it triggers well before hitting frame border
           const nearLeftEdge = palmCenter.x <= 0.25;
           const minLeftDist = nearLeftEdge ? -0.025 : -0.032;
           const minLeftVel = nearLeftEdge ? -0.30 : -0.38;
@@ -242,6 +327,7 @@ export class GestureDetector {
           const direction = 'down';
           const color = '#38bdf8'; // Sky cyan streak
           this.lastRSwipeTime = nowMs;
+          this.lastRightWallTime = nowMs;
           swipe = { hand: 'R', direction, timestampMs: nowMs };
           this.addStreakPoints(history, color, nowMs);
           this.rHistory = [];
@@ -249,6 +335,7 @@ export class GestureDetector {
           const direction = 'right';
           const color = '#818cf8'; // Indigo streak
           this.lastRSwipeTime = nowMs;
+          this.lastRightWallTime = nowMs;
           swipe = { hand: 'R', direction, timestampMs: nowMs };
           this.addStreakPoints(history, color, nowMs);
           this.rHistory = [];
@@ -256,6 +343,7 @@ export class GestureDetector {
           const direction = 'left';
           const color = '#f43f5e'; // Rose streak
           this.lastLSwipeTime = nowMs;
+          this.lastLeftWallTime = nowMs;
           swipe = { hand: 'L', direction, timestampMs: nowMs };
           this.addStreakPoints(history, color, nowMs);
           this.lHistory = [];

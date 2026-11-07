@@ -50,7 +50,9 @@ export interface LivePhraseMetrics {
     beat: number;
     hitsCount: number;
     targetBars: number;
+    targetBeats: number;
     totalBars: number;
+    totalBeats: number;
   };
   synth: {
     status: 'idle' | 'recording' | 'looping';
@@ -58,13 +60,16 @@ export interface LivePhraseMetrics {
     beat: number;
     layersCount: number;
     targetBars: number;
+    targetBeats: number;
     totalBars: number;
+    totalBeats: number;
   };
   master: {
     active: boolean;
     bar: number;
     beat: number;
     totalBars: number;
+    totalBeats: number;
   };
 }
 
