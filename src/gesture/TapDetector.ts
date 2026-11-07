@@ -86,8 +86,8 @@ interface Candidate {
 // Tuning constants
 const COOLDOWN_MS = 60;
 const PEAK_WINDOW_MS = 60; // look-back window for velocity peak during strike
-const NEIGHBOR_WINDOW_MS = 110; // after a hit, adjacent fingers need a stronger signal
-const NEIGHBOR_PENALTY = 1.9;
+const NEIGHBOR_WINDOW_MS = 180; // after a hit, adjacent fingers need a much stronger signal
+const NEIGHBOR_PENALTY = 2.4;
 const COMMON_MODE_K = 0.65; // how much of the other fingers' motion is subtracted
 const CHORD_RATIO = 0.75; // a 2nd finger in same frame must reach 75% of winner's peak velocity
 const RELEASE_FRACTION = 0.4; // release when bend drops 40% of downThreshold from its peak
@@ -95,6 +95,30 @@ const LOST_RESET_MS = 350;
 const STILL_REQUIRED_MS = 250;
 const BASELINE_RATE = 0.03;
 const VEL_EMA = 0.40; // weight of newest position derivative
+
+/**
+ * Anatomical tendon coupling coefficients between fingers of the same hand.
+ * In human anatomy, Middle <-> Ring has by far the strongest tendon coupling
+ * (juncturae tendinum type 3r). When Ring moves, Middle is passively dragged.
+ */
+function getPairwiseCoupling(fingerCodeA: string, fingerCodeB: string): number {
+  const typeA = fingerCodeA.split('_')[1];
+  const typeB = fingerCodeB.split('_')[1];
+
+  if ((typeA === 'middle' && typeB === 'ring') || (typeA === 'ring' && typeB === 'middle')) {
+    return 0.48; // Strongest coupling: 48% sympathetic drag cancellation
+  }
+  if ((typeA === 'ring' && typeB === 'pinky') || (typeA === 'pinky' && typeB === 'ring')) {
+    return 0.28;
+  }
+  if ((typeA === 'index' && typeB === 'middle') || (typeA === 'middle' && typeB === 'index')) {
+    return 0.22;
+  }
+  if ((typeA === 'thumb' && typeB === 'index') || (typeA === 'index' && typeB === 'thumb')) {
+    return 0.22;
+  }
+  return 0.10;
+}
 
 export class TapDetector {
   private states = new Map<FingerId, FingerRuntimeState>();
@@ -257,6 +281,24 @@ export class TapDetector {
         isolatedVel -= k * meanVel;
       }
 
+      // 2) Direct pairwise tendon coupling cancellation:
+      // In human anatomy, Middle and Ring fingers are mechanically coupled via juncturae tendinum.
+      // When a strongly coupled neighbor moves, subtract its direct sympathetic pull from this finger
+      // so passive dragging never crosses the strike threshold.
+      for (const otherMeta of FINGER_METAS) {
+        if (otherMeta.hand !== meta.hand || otherMeta.id === fId) continue;
+        const otherSt = this.states.get(otherMeta.id)!;
+        if (!otherSt.present || otherSt.pos === null) continue;
+
+        const coupling = getPairwiseCoupling(meta.code, otherMeta.code);
+        if (coupling > 0.15 && otherSt.delta > 0) {
+          isolated -= coupling * Math.max(0, otherSt.delta);
+          if (otherSt.vel > 0) {
+            isolatedVel -= coupling * Math.max(0, otherSt.vel);
+          }
+        }
+      }
+
       // Velocity peak history (isolated)
       st.velHistory.push({ t: nowMs, v: isolatedVel });
       while (st.velHistory.length && nowMs - st.velHistory[0].t > PEAK_WINDOW_MS) {
@@ -377,10 +419,23 @@ export class TapDetector {
       const hc = candidates.filter((c) => c.hand === hand).sort((a, b) => b.peakVel - a.peakVel);
       if (hc.length === 0) continue;
       const winner = hc[0];
+      const winnerMeta = FINGER_METAS[winner.fingerId];
+      const winnerNeighbors = this.neighborsOf(winnerMeta);
 
       for (const c of hc) {
         const isWinner = c === winner;
-        const chordOk = !settings.sympathySuppression || c.peakVel >= winner.peakVel * CHORD_RATIO;
+        const isAdjacent = winnerNeighbors.includes(c.fingerId);
+
+        // When sympathy suppression is enabled, adjacent fingers on the same hand
+        // can NEVER chord together (almost always involuntary tendon coupling, e.g. Ring pulling Middle).
+        // Non-adjacent fingers (e.g. Thumb+Middle, Thumb+Index, Index+Pinky) can still chord.
+        let chordOk = false;
+        if (!settings.sympathySuppression) {
+          chordOk = true;
+        } else if (!isAdjacent && c.peakVel >= winner.peakVel * CHORD_RATIO) {
+          chordOk = true;
+        }
+
         const st = this.states.get(c.fingerId)!;
         if (isWinner || chordOk) {
           st.lastTriggerMs = nowMs;

@@ -231,10 +231,11 @@ export class FingerMapper {
           const curlInward = Math.max(0, 0.95 - wristDist);
           rawBend = 0.70 * downRatio + 0.45 * flex + 0.25 * curlInward;
         } else {
-          // Piano strike = fingertip moves downward (+Y) relative to its MCP joint + finger curl
+          // Piano strike = downward motion (+Y) + active joint flexion (curl)
+          // Higher flexion weight amplifies intentional strikes and suppresses passive dragging
           const downRatio = (tip.y - mcp.y) / handScale;
           const flex = computeJointFlexion(mcp, pip, tip);
-          rawBend = downRatio + 0.28 * flex;
+          rawBend = 0.80 * downRatio + 0.45 * flex;
         }
 
         fingers.set(meta.id, {
