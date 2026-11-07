@@ -97,6 +97,15 @@ function runTests() {
   assert(leftSwipe?.direction === 'left', 'Left hand swipe direction must be left');
   assert(leftSwipe?.hand === 'L', 'Left hand swipe hand must be L');
 
+  // 4B. Test Left Hand Short Flick to Left Near Screen Edge
+  const gdEdge = new GestureDetector();
+  gdEdge.process('L', createMockHand('open', 0.20, 0.5), 2500);
+  gdEdge.process('L', createMockHand('open', 0.20, 0.5), 2530);
+  const edgeRes = gdEdge.process('L', createMockHand('open', 0.15, 0.5), 2580);
+  assert(edgeRes.swipe !== null, 'Short flick to left (0.05 distance near edge) must trigger swipe');
+  assert(edgeRes.swipe?.direction === 'left', 'Direction must be left');
+  assert(edgeRes.swipe?.hand === 'L', 'Hand must be L');
+
   // 5. Test Sudden Flick after Stationary Hand (Peak-stroke / no velocity dilution bug)
   const gdFlick = new GestureDetector();
   gdFlick.process('L', createMockHand('open', 0.50, 0.5), 3000);

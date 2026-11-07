@@ -34,7 +34,7 @@ export class GestureDetector {
 
   private lastRSwipeTime = 0;
   private lastLSwipeTime = 0;
-  private swipeCooldownMs = 450;
+  private swipeCooldownMs = 320;
 
   private streakPoints: SwipeStreakPoint[] = [];
 
@@ -201,7 +201,7 @@ export class GestureDetector {
       for (let i = history.length - 2; i >= 0; i--) {
         const past = history[i];
         const dt = (nowMs - past.t) / 1000;
-        if (dt >= 0.045 && dt <= 0.25) {
+        if (dt >= 0.025 && dt <= 0.26) {
           const dx = palmCenter.x - past.x;
           if (Math.abs(dx) > maxAbsDx) {
             maxAbsDx = Math.abs(dx);
@@ -234,10 +234,11 @@ export class GestureDetector {
           maxDy >= 0.14 &&
           velY >= 0.95;
 
-        // 2) Horizontal loop commit swipe: smooth lateral flick for Left hand (drums) or Right hand (synth)
+        // 2) Horizontal loop commit swipe: effortless lateral flick for Left hand (drums) or Right hand (synth)
+        // Responsive 0.040 distance so swiping left toward camera edge triggers instantly
         const isHorizontalLoopSwipe =
-          maxAbsDx >= 0.065 &&
-          Math.abs(velX) >= 0.65;
+          maxAbsDx >= 0.040 &&
+          Math.abs(velX) >= 0.50;
 
         if (isDownwardPresetSwipe) {
           const direction = 'down';
