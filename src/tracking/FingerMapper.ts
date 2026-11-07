@@ -223,13 +223,22 @@ export class FingerMapper {
 
         let rawBend: number;
         if (meta.isThumb) {
-          // Thumb tap in air piano: downward motion (+Y) and flex at IP joint
-          // Decoupled from index/pinky MCP to prevent adjacent finger taps from triggering the thumb
-          const downRatio = (tip.y - mcp.y) / handScale;
-          const flex = computeJointFlexion(landmarks[1], mcp, tip);
-          const wristDist = dist2D(tip, wrist) / handScale;
-          const curlInward = Math.max(0, 0.95 - wristDist);
-          rawBend = 0.70 * downRatio + 0.45 * flex + 0.25 * curlInward;
+          // Thumb tap in air piano / drums:
+          // 1) Full downward swing from the CMC basal joint (landmark 1 at the wrist)
+          // 2) Tip flexion relative to MCP joint (landmark 2)
+          // 3) Joint curl along the thumb ray
+          // 4) Inward travel toward palm center (wrist + middle MCP midpoint)
+          const cmc = landmarks[1];
+          const downCmc = (tip.y - cmc.y) / handScale;
+          const downMcp = (tip.y - mcp.y) / handScale;
+          const flex = computeJointFlexion(cmc, mcp, tip);
+          const palmCenterPt: Point3D = {
+            x: (wrist.x + middleMcp.x) * 0.5,
+            y: (wrist.y + middleMcp.y) * 0.5,
+            z: (wrist.z + middleMcp.z) * 0.5,
+          };
+          const inwardPalm = Math.max(0, 0.75 - dist2D(tip, palmCenterPt) / handScale);
+          rawBend = 0.80 * downCmc + 0.35 * downMcp + 0.40 * flex + 0.30 * inwardPalm;
         } else {
           // Piano strike = downward motion (+Y) + active joint flexion (curl)
           // Higher flexion weight amplifies intentional strikes and suppresses passive dragging

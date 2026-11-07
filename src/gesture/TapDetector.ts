@@ -106,16 +106,16 @@ function getPairwiseCoupling(fingerCodeA: string, fingerCodeB: string): number {
   const typeB = fingerCodeB.split('_')[1];
 
   if ((typeA === 'middle' && typeB === 'ring') || (typeA === 'ring' && typeB === 'middle')) {
-    return 0.48; // Strongest coupling: 48% sympathetic drag cancellation
+    return 0.62; // Strong 62% bidirectional sympathy cancellation between Middle and Ring
   }
   if ((typeA === 'ring' && typeB === 'pinky') || (typeA === 'pinky' && typeB === 'ring')) {
-    return 0.28;
+    return 0.30;
   }
   if ((typeA === 'index' && typeB === 'middle') || (typeA === 'middle' && typeB === 'index')) {
     return 0.22;
   }
   if ((typeA === 'thumb' && typeB === 'index') || (typeA === 'index' && typeB === 'thumb')) {
-    return 0.22;
+    return 0.15;
   }
   return 0.10;
 }
@@ -276,7 +276,7 @@ export class TapDetector {
       if (others.length > 0) {
         const meanDelta = others.reduce((a, o) => a + Math.max(0, o.delta), 0) / others.length;
         const meanVel = others.reduce((a, o) => a + Math.max(0, o.vel), 0) / others.length;
-        const k = meta.isThumb ? 0.50 : COMMON_MODE_K;
+        const k = meta.isThumb ? 0.20 : COMMON_MODE_K;
         isolated -= k * meanDelta;
         isolatedVel -= k * meanVel;
       }
@@ -345,19 +345,28 @@ export class TapDetector {
       }
 
       const sens = Math.max(0.35, settings.sensitivity);
-      let downThreshold = (meta.isThumb ? 0.19 : 0.17) / sens;
-      let velThreshold = settings.velocityThreshold / sens;
+      let downThreshold = (meta.isThumb ? 0.14 : 0.17) / sens;
+      let velThreshold =
+        ((meta.isThumb ? 1.05 : 1.30) * (settings.velocityThreshold / 1.35)) / sens;
       const upThreshold = downThreshold * 0.45;
 
-      // Neighbor penalty: an adjacent finger was just hit → require a stronger signal
+      // Neighbor penalty: an adjacent finger was recently hit OR is currently pressed/releasing
       if (settings.sympathySuppression) {
-        const recentNeighborHit = this.neighborsOf(meta).some((nId) => {
+        const neighbors = this.neighborsOf(meta);
+        const recentNeighborHit = neighbors.some((nId) => {
           const t = this.lastHitByFinger.get(nId);
           return t !== undefined && nowMs - t < NEIGHBOR_WINDOW_MS;
         });
-        if (recentNeighborHit) {
-          downThreshold *= NEIGHBOR_PENALTY;
-          velThreshold *= NEIGHBOR_PENALTY;
+        const neighborActive = neighbors.some((nId) => {
+          const nState = this.states.get(nId);
+          return nState && (nState.phase === 'PRESSED' || nState.phase === 'RELEASING');
+        });
+
+        if (recentNeighborHit || neighborActive) {
+          const isMiddleRing = meta.code.endsWith('middle') || meta.code.endsWith('ring');
+          const penalty = isMiddleRing ? 2.8 : NEIGHBOR_PENALTY;
+          downThreshold *= penalty;
+          velThreshold *= penalty;
         }
       }
 
@@ -401,8 +410,8 @@ export class TapDetector {
           break;
         }
         case 'SUPPRESSED': {
-          // Locked until the finger comes back up — prevents re-trigger on next frame
-          if (isolated <= upThreshold || st.vel < -0.4 * velThreshold) {
+          // Locked until the finger comes back up to rest — prevents immediate re-trigger
+          if (isolated <= upThreshold) {
             st.phase = 'IDLE';
             st.velHistory = [];
           }
