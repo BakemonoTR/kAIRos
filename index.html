@@ -13,47 +13,50 @@
     <div id="app">
       <!-- Top Bar -->
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-dot"></span>
-          <h1>BeatCam</h1>
-          <span class="brand-sub">Air studio</span>
+        <div class="topbar-camera">
+          <div class="brand">
+            <h1>BeatCam</h1>
+          </div>
+
+          <div class="mode-switch-group">
+            <button id="btn-mode-fingers" class="btn-mode active" title="10-finger sample &amp; drum mode">
+              Finger mode
+            </button>
+            <button id="btn-mode-theremin" class="btn-mode" title="Theremin synth &amp; looper mode">
+              Theremin &amp; looper
+            </button>
+          </div>
+
+          <div class="record-controls">
+            <label class="inline-toggle" title="Include HUD overlay in recorded video">
+              <input type="checkbox" id="chk-video-overlay" checked />
+              <span>Overlay</span>
+            </label>
+
+            <select id="sel-resolution" class="select-sm" title="Video resolution">
+              <option value="720p">720p</option>
+              <option value="480p">480p</option>
+            </select>
+
+            <span id="rec-timer" class="rec-timer hidden">00:00.0</span>
+
+            <button id="btn-record" class="btn btn-record" disabled title="Record video and MIDI">
+              <span class="rec-icon"></span>
+              <span id="rec-label">Record</span>
+            </button>
+          </div>
         </div>
 
-        <div class="mode-switch-group">
-          <button id="btn-mode-fingers" class="btn-mode active" title="10-finger sample &amp; drum mode">
-            Finger mode
-          </button>
-          <button id="btn-mode-theremin" class="btn-mode" title="Theremin synth &amp; looper mode">
-            Theremin &amp; looper
-          </button>
-        </div>
-
-        <div class="record-controls">
-          <button id="btn-record" class="btn btn-record" disabled title="Record video and MIDI">
-            <span class="rec-icon"></span>
-            <span id="rec-label">Record</span>
-          </button>
-          <span id="rec-timer" class="rec-timer hidden">00:00.0</span>
-
-          <label class="inline-toggle" title="Include HUD overlay in recorded video">
-            <input type="checkbox" id="chk-video-overlay" checked />
-            <span>Include overlay</span>
-          </label>
-
-          <select id="sel-resolution" class="select-sm" title="Video resolution">
-            <option value="720p">720p</option>
-            <option value="480p">480p</option>
-          </select>
-        </div>
-
-        <div class="preset-controls">
-          <button id="btn-export-preset" class="btn btn-ghost btn-sm" title="Export preset as JSON">
-            Export preset
-          </button>
-          <button id="btn-import-preset" class="btn btn-ghost btn-sm" title="Import preset JSON">
-            Import preset
-          </button>
-          <input type="file" id="input-import-preset" accept=".json,application/json" class="hidden" />
+        <div class="topbar-sidebar">
+          <div class="preset-controls">
+            <button id="btn-export-preset" class="btn btn-ghost btn-sm" title="Export preset as JSON">
+              Export preset
+            </button>
+            <button id="btn-import-preset" class="btn btn-ghost btn-sm" title="Import preset JSON">
+              Import preset
+            </button>
+            <input type="file" id="input-import-preset" accept=".json,application/json" class="hidden" />
+          </div>
         </div>
       </header>
 
