@@ -452,6 +452,10 @@ async function bootstrap(): Promise<void> {
       store.emit('statusMessage', 'Canlı takip aktif');
 
       lastFrameMs = performance.now();
+      let lastThereminActiveMs = 0;
+      let leftLockoutUntilMs = 0;
+      let prevPalmL: { x: number; y: number } | null = null;
+
       camera.startFrameLoop((nowMs, video) => {
         // FPS calculation
         const dt = nowMs - lastFrameMs;
@@ -485,7 +489,15 @@ async function bootstrap(): Promise<void> {
           );
 
           if (handKey === 'L') {
-            if (Math.abs(gestureState.velocityX) > 0.65 || Math.abs(gestureState.velocityY) > 0.70) {
+            let palmSpeed = 0;
+            if (prevPalmL && dt > 0) {
+              palmSpeed =
+                Math.hypot(gestureState.palmCenter.x - prevPalmL.x, gestureState.palmCenter.y - prevPalmL.y) /
+                (dt / 1000);
+            }
+            prevPalmL = { x: gestureState.palmCenter.x, y: gestureState.palmCenter.y };
+
+            if (palmSpeed > 0.38 || Math.abs(gestureState.velocityX) > 0.40 || Math.abs(gestureState.velocityY) > 0.45) {
               isLeftFastMoving = true;
             }
           }
@@ -495,15 +507,19 @@ async function bootstrap(): Promise<void> {
               store.emit('swipeEvent', swipe);
               if (swipe.hand === 'R') {
                 if (swipe.direction === 'down') {
-                  // Downward swipe on right hand: Cycle to next synth preset
-                  const nextPreset = theremin.cycleNextPreset();
-                  store.updateSettings({ thereminPreset: nextPreset.preset });
-                  selThereminPreset.value = nextPreset.preset;
-                  theremin.playPresetChangeChime();
-                  overlay.showToast(`🎛️ Synth Sesi: ${nextPreset.name}`, '#38bdf8');
-                  store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
+                  // Guard: Downward swipe to cycle preset ONLY when hand is OPEN and NOT playing theremin!
+                  const isPlayingTheremin = theremin.isActive() || nowMs - lastThereminActiveMs < 400;
+                  if (!isPlayingTheremin) {
+                    const nextPreset = theremin.cycleNextPreset();
+                    store.updateSettings({ thereminPreset: nextPreset.preset });
+                    selThereminPreset.value = nextPreset.preset;
+                    theremin.playPresetChangeChime();
+                    overlay.showToast(`🎛️ Synth Sesi: ${nextPreset.name}`, '#38bdf8');
+                    store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
+                  }
                 } else {
-                  // Horizontal swipe on right hand: Commit synth loop
+                  // Horizontal swipe on right hand: silence immediately so pitch sweep isn't audible
+                  theremin.silence();
                   const res = airLooper.commitSynthLoop();
                   if (res.totalLayers > 0) {
                     const bars = Math.round(res.beatsCount / 4);
@@ -522,6 +538,7 @@ async function bootstrap(): Promise<void> {
                   refreshLooperUi();
                 }
               } else if (swipe.hand === 'L') {
+                leftLockoutUntilMs = nowMs + 450; // Lockout follow-through taps for 450ms
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
                   const bars = Math.round(res.beatsCount / 4);
@@ -552,6 +569,7 @@ async function bootstrap(): Promise<void> {
               gestureState.palmCenter.y
             );
             if (tRes.active) {
+              lastThereminActiveMs = nowMs;
               airLooper.markSynthActive();
             }
             const tState: ThereminState = {
@@ -583,14 +601,15 @@ async function bootstrap(): Promise<void> {
           airLooper.isSynthCapturing()
         );
 
+        const isLeftSuppressed = isLeftFastMoving || nowMs < leftLockoutUntilMs;
         const { taps, releases } = tapDetector.process(mapped, slots, settings, nowMs);
         for (const tap of taps) {
           // In theremin mode, right hand taps are ignored so right hand is exclusively Theremin
           if (settings.appMode === 'theremin' && tap.fingerId >= 5) {
             continue;
           }
-          // Suppress accidental drum taps when left hand is performing a fast swipe flick
-          if (tap.fingerId < 5 && isLeftFastMoving) {
+          // Suppress accidental drum taps when left hand is in rapid motion or swiping
+          if (tap.fingerId < 5 && isLeftSuppressed) {
             continue;
           }
           store.emit('noteOn', { ...tap, timestampMs: nowMs });

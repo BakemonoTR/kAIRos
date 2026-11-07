@@ -225,48 +225,44 @@ export class GestureDetector {
       const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
 
       if (canSwipe) {
-        // Downward swipe: moving down screen (y increases) by at least 0.09 screen height with velocity >= 0.80/s
-        const isDownwardSwipe =
-          maxDy >= 0.09 &&
-          velY >= 0.80 &&
-          velY > Math.abs(velX) * 1.15;
+        // 1) Downward swipe: STRICTLY for Right hand, and ONLY when hand is completely OPEN!
+        // Never triggers when clenching into a fist, while in a fist, or while playing theremin
+        const isDownwardPresetSwipe =
+          isRight &&
+          smoothed < 0.28 &&
+          !isClosed &&
+          maxDy >= 0.14 &&
+          velY >= 0.95;
 
-        // Horizontal swipe: moving left or right by at least 0.08 screen width with velocity >= 0.80/s
-        const isHorizontalSwipe =
-          maxAbsDx >= 0.08 &&
-          Math.abs(velX) >= 0.80 &&
-          Math.abs(velX) > velY * 1.15;
+        // 2) Horizontal loop commit swipe: smooth lateral flick for Left hand (drums) or Right hand (synth)
+        const isHorizontalLoopSwipe =
+          maxAbsDx >= 0.065 &&
+          Math.abs(velX) >= 0.65;
 
-        if (isDownwardSwipe) {
+        if (isDownwardPresetSwipe) {
           const direction = 'down';
-          const color = '#38bdf8'; // Cyan streak for down swipe
+          const color = '#38bdf8'; // Cyan streak for down preset swipe
 
-          if (isRight) {
-            this.lastRSwipeTime = nowMs;
-            swipe = { hand: 'R', direction, timestampMs: nowMs };
-          } else {
-            this.lastLSwipeTime = nowMs;
-            swipe = { hand: 'L', direction, timestampMs: nowMs };
-          }
+          this.lastRSwipeTime = nowMs;
+          swipe = { hand: 'R', direction, timestampMs: nowMs };
 
           this.addStreakPoints(history, color, nowMs);
-          if (isRight) this.rHistory = [];
-          else this.lHistory = [];
-        } else if (isHorizontalSwipe) {
+          this.rHistory = [];
+        } else if (isHorizontalLoopSwipe) {
           const direction: 'left' | 'right' = bestDx > 0 ? 'right' : 'left';
           const color = isRight ? '#818cf8' : '#f43f5e';
 
           if (isRight) {
             this.lastRSwipeTime = nowMs;
             swipe = { hand: 'R', direction, timestampMs: nowMs };
+            this.rHistory = [];
           } else {
             this.lastLSwipeTime = nowMs;
             swipe = { hand: 'L', direction, timestampMs: nowMs };
+            this.lHistory = [];
           }
 
           this.addStreakPoints(history, color, nowMs);
-          if (isRight) this.rHistory = [];
-          else this.lHistory = [];
         }
       }
     }

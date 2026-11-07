@@ -99,6 +99,10 @@ export class ThereminEngine {
     return this.currentPreset;
   }
 
+  isActive(): boolean {
+    return this.active;
+  }
+
   cycleNextPreset(): { preset: ThereminPreset; name: string } {
     const idx = THEREMIN_PRESETS.indexOf(this.currentPreset);
     const next = THEREMIN_PRESETS[(idx + 1) % THEREMIN_PRESETS.length];

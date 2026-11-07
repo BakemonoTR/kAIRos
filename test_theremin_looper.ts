@@ -132,11 +132,11 @@ function runTests() {
   assert(al.calculateQuantizedBeats(8.5) === 12, '8.5 beats (exceeded 8 beats) should quantize to 12 beats (3 bars)');
   assert(al.calculateQuantizedBeats(12.5) === 16, '12.5 beats (exceeded 12 beats) should quantize to 16 beats (4 bars)');
 
-  // 8. Test Downward Swipe on Right Hand
+  // 8. Test Downward Swipe on Right Hand (Open hand)
   const gdDown = new GestureDetector();
   let downSwipe = null;
   const dTimes = [4000, 4050, 4100, 4150];
-  const dYs = [0.25, 0.35, 0.48, 0.62];
+  const dYs = [0.20, 0.35, 0.52, 0.68];
   for (let i = 0; i < dTimes.length; i++) {
     const res = gdDown.process('R', createMockHand('open', 0.65, dYs[i]), dTimes[i]);
     if (res.swipe) {
@@ -144,9 +144,21 @@ function runTests() {
       break;
     }
   }
-  assert(downSwipe !== null, 'Right hand fast downward motion should trigger downward swipe');
+  assert(downSwipe !== null, 'Right hand fast downward motion with open hand should trigger downward swipe');
   assert(downSwipe?.direction === 'down', 'Down swipe direction must be down');
   assert(downSwipe?.hand === 'R', 'Down swipe hand must be R');
+
+  // 8B. Test that Clenched Fist moving down NEVER triggers downward swipe (prevents switching preset while making fist or playing low notes)
+  const gdFistDown = new GestureDetector();
+  let fistDownSwipe = null;
+  for (let i = 0; i < dTimes.length; i++) {
+    const res = gdFistDown.process('R', createMockHand('closed', 0.65, dYs[i]), dTimes[i]);
+    if (res.swipe) {
+      fistDownSwipe = res.swipe;
+      break;
+    }
+  }
+  assert(fistDownSwipe === null, 'Clenched fist moving down must NEVER trigger downward preset swipe');
 
   // 9. Test Theremin Preset Cycling
   const p1Preset = te.getPreset();

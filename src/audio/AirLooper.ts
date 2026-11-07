@@ -205,8 +205,8 @@ export class AirLooper {
     try {
       const now = this.ctx.currentTime;
 
-      // Prune accidental hits caused by rapid hand flick during the swipe gesture (last 220ms)
-      const swipeWindowCutoff = now - 0.22;
+      // Prune accidental hits caused by rapid hand flick during the swipe gesture (last 350ms)
+      const swipeWindowCutoff = now - 0.35;
       this.pendingDrumHits = this.pendingDrumHits.filter((h) => h.timeSec < swipeWindowCutoff);
 
       if (this.pendingDrumHits.length === 0) {
@@ -371,7 +371,10 @@ export class AirLooper {
       const outL = layerBuffer.getChannelData(0);
       const outR = layerBuffer.getChannelData(1);
 
-      const startIdx = (this.writeIndex - numSamples + cap) % cap;
+      // Prune trailing 200ms of audio buffer containing the hand swipe motion
+      const swipePruneSamples = Math.floor(sr * 0.20);
+      const endOffset = (this.writeIndex - swipePruneSamples + cap) % cap;
+      const startIdx = (endOffset - numSamples + cap) % cap;
 
       for (let i = 0; i < numSamples; i++) {
         const idx = (startIdx + i) % cap;
