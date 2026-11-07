@@ -448,37 +448,60 @@ export class Overlay {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const clench = tState.clenchRatio;
-    const isPlaying = tState.active;
+    const vol = Math.max(0, Math.min(1, tState.volume));
+    const volPct = Math.round(vol * 100);
+    const ringRadius = 22;
 
-    if (isPlaying) {
-      const orbRadius = 20 + clench * 16;
-      const grad = ctx.createRadialGradient(x, y, 4, x, y, orbRadius);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.92)');
-      grad.addColorStop(0.45, 'rgba(74, 222, 128, 0.75)');
+    if (vol > 0) {
+      const orbRadius = 10 + vol * 18;
+      const grad = ctx.createRadialGradient(x, y, 2, x, y, orbRadius);
+      grad.addColorStop(0, `rgba(255, 255, 255, ${0.4 + vol * 0.55})`);
+      grad.addColorStop(0.5, `rgba(74, 222, 128, ${0.25 + vol * 0.6})`);
       grad.addColorStop(1, 'rgba(34, 197, 94, 0)');
 
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(x, y, orbRadius, 0, Math.PI * 2);
       ctx.fill();
-
-      ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(x, y, orbRadius * 1.12, 0, Math.PI * 2);
-      ctx.stroke();
-
-      this.drawDigitalText(ctx, tState.noteName, x, y - orbRadius - 16, 13, '#f8fafc', 'center');
-    } else {
-      ctx.strokeStyle = 'rgba(226, 232, 240, 0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(x, y, 15, 0, Math.PI * 2);
-      ctx.stroke();
-
-      this.drawDigitalText(ctx, 'Fist to play', x, y - 24, 12, 'rgba(226, 232, 240, 0.8)', 'center');
     }
+
+    // Volume Gauge Track Ring
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.25)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Volume Gauge Active Arc (0% -> 100%)
+    if (vol > 0) {
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + vol * Math.PI * 2;
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, ringRadius, startAngle, endAngle);
+      ctx.stroke();
+    }
+
+    // Note Name above hand & Volume % indicator below hand
+    this.drawDigitalText(
+      ctx,
+      tState.noteName,
+      x,
+      y - ringRadius - 14,
+      13,
+      vol > 0 ? '#f8fafc' : 'rgba(226, 232, 240, 0.65)',
+      'center'
+    );
+    this.drawDigitalText(
+      ctx,
+      `${volPct}%`,
+      x,
+      y + ringRadius + 14,
+      12.5,
+      vol > 0 ? '#4ade80' : 'rgba(226, 232, 240, 0.65)',
+      'center'
+    );
 
     ctx.restore();
   }

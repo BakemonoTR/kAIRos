@@ -598,6 +598,31 @@ function runTests() {
     assert(off1.pointerModeToggled || off2.pointerModeToggled, 'pointerModeToggled flag must be true when toggling OFF');
   }
 
+  // 16. Test Proportional 0%..100% Theremin Volume from Hand Squeeze
+  {
+    const teVol = new ThereminEngine();
+    const openRes = teVol.updateGesture(0.02, 0.5, 0.5);
+    assert(openRes.volume === 0, 'Fully open hand (clench=0.02) must produce 0% volume');
+
+    const slightCupRes = teVol.updateGesture(0.25, 0.5, 0.5);
+    assert(
+      slightCupRes.volume > 0.15 && slightCupRes.volume < 0.30,
+      `Slightly open/cupped hand (clench=0.25) must produce low volume (~20%, got ${Math.round(slightCupRes.volume * 100)}%)`
+    );
+
+    const halfFistRes = teVol.updateGesture(0.475, 0.5, 0.5);
+    assert(
+      Math.round(halfFistRes.volume * 100) === 50,
+      `Half-squeezed hand (clench=0.475) must produce 50% volume (got ${Math.round(halfFistRes.volume * 100)}%)`
+    );
+
+    const fullFistRes = teVol.updateGesture(0.90, 0.5, 0.5);
+    assert(
+      Math.round(fullFistRes.volume * 100) === 100,
+      `Full fist (clench=0.90) must produce 100% volume (got ${Math.round(fullFistRes.volume * 100)}%)`
+    );
+  }
+
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }
 

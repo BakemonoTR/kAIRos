@@ -145,8 +145,8 @@ export class GestureDetector {
 
     const avgDist = (totalDist / tipIndices.length) / handScale;
 
-    const openDist = 1.35;
-    const closedDist = 0.52;
+    const openDist = 1.32;
+    const closedDist = 0.64;
 
     const distRatio = Math.max(0, Math.min(1, 1 - (avgDist - closedDist) / (openDist - closedDist)));
 
@@ -160,8 +160,11 @@ export class GestureDetector {
 
       const validCurls = [c1, c2, c3, c4, c5].filter((c) => c > 0);
       if (validCurls.length >= 3) {
-        const avgCurl = (c1 + c2 + c3 + c4 + c5) / 5;
-        return Math.max(0, Math.min(1, 0.70 * avgCurl + 0.30 * distRatio));
+        // Weight the 4 main fingers (index..pinky) at 90% and thumb at 10% so a full fist reaches 1.0 (100%)
+        const fourFingerCurl = (c1 + c2 + c3 + c4) * 0.25;
+        const weightedCurl = 0.90 * fourFingerCurl + 0.10 * c5;
+        const normalizedCurl = Math.max(0, Math.min(1, (weightedCurl - 0.06) / (0.76 - 0.06)));
+        return Math.max(0, Math.min(1, 0.70 * normalizedCurl + 0.30 * distRatio));
       }
     }
 

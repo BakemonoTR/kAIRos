@@ -298,6 +298,21 @@ export class ThereminEngine {
   }
 
   /**
+   * Maps hand clench ratio (0 = completely open, 1 = full fist) to normalized volume (0..1 = 0%..100%).
+   * - Open hand (<= 0.10): 0% (silent)
+   * - Semi-open / lightly cupped (0.15..0.45): low volume (~7%..47%)
+   * - Full fist (>= 0.85): 100% volume (1.0)
+   */
+  computeVolume(clenchRatio: number): number {
+    const threshold = this.active ? 0.08 : 0.12;
+    if (clenchRatio <= threshold) {
+      return 0;
+    }
+    const norm = (clenchRatio - 0.10) / (0.85 - 0.10);
+    return Math.max(0, Math.min(1, norm));
+  }
+
+  /**
    * Updates real-time theremin parameters from hand tracking.
    * clenchRatio: 0 (hand completely open) to 1 (fist / closed hand).
    * handX: 0 to 1 across screen.
@@ -310,17 +325,27 @@ export class ThereminEngine {
     volume: number;
     brightness: number;
   } {
-    if (!this.ctx || !this.vcaGain || !this.filterNode) {
-      return { active: false, frequency: 440, noteName: 'A4', volume: 0, brightness: 2500 };
-    }
-
-    const now = this.ctx.currentTime;
     const pitchInfo = this.computePitch(handY);
     this.currentFreq = pitchInfo.frequency;
     this.currentNoteName = pitchInfo.noteName;
+    const cutoffFreq = 400 + Math.pow(Math.max(0.05, Math.min(0.95, handX)), 1.8) * 8000;
+    const dynamicVolume = this.computeVolume(clenchRatio);
+    const isPlaying = dynamicVolume > 0;
+
+    if (!this.ctx || !this.vcaGain || !this.filterNode) {
+      this.active = isPlaying;
+      return {
+        active: this.active,
+        frequency: this.currentFreq,
+        noteName: this.currentNoteName,
+        volume: dynamicVolume,
+        brightness: cutoffFreq,
+      };
+    }
+
+    const now = this.ctx.currentTime;
 
     // Cutoff frequency controlled by hand X (left = darker, right = brighter)
-    const cutoffFreq = 400 + Math.pow(Math.max(0.05, Math.min(0.95, handX)), 1.8) * 8000;
     this.filterNode.frequency.setTargetAtTime(cutoffFreq, now, 0.03);
 
     // Pitch smooth portamento
@@ -330,19 +355,10 @@ export class ThereminEngine {
       this.osc2.frequency.setTargetAtTime(pitchInfo.frequency, now, portamentoTime);
     }
 
-    // Gate & Volume control from Fist Squeeze Tightness:
-    // User requested: "avcumu ne kadar sıktığıma bağlı olarak thereminin sesi ayarlanmalı"
-    // Gate ON when fist is closed (clenchRatio > 0.46) with hysteresis down to 0.38
-    const isClosed = this.active ? clenchRatio > 0.38 : clenchRatio > 0.46;
-
-    let dynamicVolume = 0;
-    if (isClosed) {
+    if (isPlaying) {
       this.active = true;
-      // Squeeze tightness normalized: 0.42 (just closed) -> 0.88+ (clenched tight)
-      const squeezeTightness = Math.max(0, Math.min(1, (clenchRatio - 0.42) / 0.46));
-      // Power curve for natural acoustic response: gentle whisper when light, punchy when tight
-      dynamicVolume = 0.15 + 0.82 * Math.pow(squeezeTightness, 1.25);
-      this.vcaGain.gain.setTargetAtTime(dynamicVolume * 0.80, now, 0.03);
+      const acousticGain = Math.pow(dynamicVolume, 1.15) * 0.90;
+      this.vcaGain.gain.setTargetAtTime(acousticGain, now, 0.025);
     } else {
       if (this.active) {
         this.active = false;
@@ -355,7 +371,7 @@ export class ThereminEngine {
       active: this.active,
       frequency: this.currentFreq,
       noteName: this.currentNoteName,
-      volume: isClosed ? dynamicVolume : 0,
+      volume: dynamicVolume,
       brightness: cutoffFreq,
     };
   }

@@ -569,7 +569,7 @@ async function bootstrap(): Promise<void> {
               if (swipe.hand === 'R') {
                 if (swipe.direction === 'down') {
                   // Guard: Downward swipe to cycle preset ONLY when hand is OPEN and NOT playing theremin!
-                  const isPlayingTheremin = theremin.isActive() || gestureState.isClosed;
+                  const isPlayingTheremin = gestureState.isClosed || gestureState.clenchRatio > 0.25;
                   if (!isPlayingTheremin) {
                     const nextPreset = theremin.cycleNextPreset();
                     store.updateSettings({ thereminPreset: nextPreset.preset });
@@ -630,7 +630,7 @@ async function bootstrap(): Promise<void> {
               gestureState.palmCenter.x,
               gestureState.palmCenter.y
             );
-            if (tRes.active) {
+            if (tRes.active && tRes.volume >= 0.15) {
               airLooper.markSynthActive();
             }
             const tState: ThereminState = {
