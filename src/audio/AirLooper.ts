@@ -205,8 +205,9 @@ export class AirLooper {
     try {
       const now = this.ctx.currentTime;
 
-      // Prune accidental hits caused by rapid hand flick during the swipe gesture (last 350ms)
-      const swipeWindowCutoff = now - 0.35;
+      // Prune accidental hits caused by rapid hand flick during the swipe gesture (last 120ms only)
+      // Keeps genuine final drum hits played right before the swipe intact
+      const swipeWindowCutoff = now - 0.12;
       this.pendingDrumHits = this.pendingDrumHits.filter((h) => h.timeSec < swipeWindowCutoff);
 
       if (this.pendingDrumHits.length === 0) {

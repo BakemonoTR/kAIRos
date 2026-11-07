@@ -452,7 +452,6 @@ async function bootstrap(): Promise<void> {
       store.emit('statusMessage', 'Canlı takip aktif');
 
       lastFrameMs = performance.now();
-      let lastThereminActiveMs = 0;
       let leftLockoutUntilMs = 0;
       let prevPalmL: { x: number; y: number } | null = null;
 
@@ -497,7 +496,8 @@ async function bootstrap(): Promise<void> {
             }
             prevPalmL = { x: gestureState.palmCenter.x, y: gestureState.palmCenter.y };
 
-            if (palmSpeed > 0.38 || Math.abs(gestureState.velocityX) > 0.40 || Math.abs(gestureState.velocityY) > 0.45) {
+            // Only suppress when moving rapidly to the left (actual swipe flick) or extreme gross speed
+            if (gestureState.velocityX < -0.55 || palmSpeed > 0.65) {
               isLeftFastMoving = true;
             }
           }
@@ -508,7 +508,7 @@ async function bootstrap(): Promise<void> {
               if (swipe.hand === 'R') {
                 if (swipe.direction === 'down') {
                   // Guard: Downward swipe to cycle preset ONLY when hand is OPEN and NOT playing theremin!
-                  const isPlayingTheremin = theremin.isActive() || nowMs - lastThereminActiveMs < 400;
+                  const isPlayingTheremin = theremin.isActive() || gestureState.isClosed;
                   if (!isPlayingTheremin) {
                     const nextPreset = theremin.cycleNextPreset();
                     store.updateSettings({ thereminPreset: nextPreset.preset });
@@ -517,8 +517,8 @@ async function bootstrap(): Promise<void> {
                     overlay.showToast(`🎛️ Synth Sesi: ${nextPreset.name}`, '#38bdf8');
                     store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
                   }
-                } else {
-                  // Horizontal swipe on right hand: silence immediately so pitch sweep isn't audible
+                } else if (swipe.direction === 'right') {
+                  // Horizontal swipe to the right on right hand: silence immediately so pitch sweep isn't audible
                   theremin.silence();
                   const res = airLooper.commitSynthLoop();
                   if (res.totalLayers > 0) {
@@ -537,8 +537,8 @@ async function bootstrap(): Promise<void> {
                   }
                   refreshLooperUi();
                 }
-              } else if (swipe.hand === 'L') {
-                leftLockoutUntilMs = nowMs + 450; // Lockout follow-through taps for 450ms
+              } else if (swipe.hand === 'L' && swipe.direction === 'left') {
+                leftLockoutUntilMs = nowMs + 200; // Brief 200ms follow-through lockout
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
                   const bars = Math.round(res.beatsCount / 4);
@@ -569,7 +569,6 @@ async function bootstrap(): Promise<void> {
               gestureState.palmCenter.y
             );
             if (tRes.active) {
-              lastThereminActiveMs = nowMs;
               airLooper.markSynthActive();
             }
             const tState: ThereminState = {

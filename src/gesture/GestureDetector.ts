@@ -225,45 +225,49 @@ export class GestureDetector {
       const canSwipe = nowMs - lastSwipe > this.swipeCooldownMs;
 
       if (canSwipe) {
-        // 1) Downward swipe: STRICTLY for Right hand, and ONLY when hand is completely OPEN!
-        // Never triggers when clenching into a fist, while in a fist, or while playing theremin
+        // 1) Downward swipe: STRICTLY for Right hand, and ONLY when hand is OPEN (not a fist)
+        // Natural flick down to cycle synth preset
         const isDownwardPresetSwipe =
           isRight &&
-          smoothed < 0.28 &&
+          smoothed < 0.40 &&
           !isClosed &&
-          maxDy >= 0.14 &&
-          velY >= 0.95;
+          maxDy >= 0.09 &&
+          velY >= 0.70;
 
-        // 2) Horizontal loop commit swipe: effortless lateral flick for Left hand (drums) or Right hand (synth)
-        // Responsive 0.040 distance so swiping left toward camera edge triggers instantly
-        const isHorizontalLoopSwipe =
-          maxAbsDx >= 0.040 &&
-          Math.abs(velX) >= 0.50;
+        // 2) Horizontal loop commit swipes:
+        // - Drums (Left hand): strictly swipe LEFT (ekranın soluna: bestDx <= -0.055, velX <= -0.58)
+        // - Synth (Right hand): strictly swipe RIGHT (ekranın sağına: bestDx >= 0.055, velX >= 0.58)
+        const isLeftDrumSwipe =
+          !isRight &&
+          bestDx <= -0.055 &&
+          velX <= -0.58;
+
+        const isRightSynthSwipe =
+          isRight &&
+          bestDx >= 0.055 &&
+          velX >= 0.58;
 
         if (isDownwardPresetSwipe) {
           const direction = 'down';
-          const color = '#38bdf8'; // Cyan streak for down preset swipe
-
+          const color = '#38bdf8'; // Sky cyan streak
           this.lastRSwipeTime = nowMs;
           swipe = { hand: 'R', direction, timestampMs: nowMs };
-
           this.addStreakPoints(history, color, nowMs);
           this.rHistory = [];
-        } else if (isHorizontalLoopSwipe) {
-          const direction: 'left' | 'right' = bestDx > 0 ? 'right' : 'left';
-          const color = isRight ? '#818cf8' : '#f43f5e';
-
-          if (isRight) {
-            this.lastRSwipeTime = nowMs;
-            swipe = { hand: 'R', direction, timestampMs: nowMs };
-            this.rHistory = [];
-          } else {
-            this.lastLSwipeTime = nowMs;
-            swipe = { hand: 'L', direction, timestampMs: nowMs };
-            this.lHistory = [];
-          }
-
+        } else if (isRightSynthSwipe) {
+          const direction = 'right';
+          const color = '#818cf8'; // Indigo streak
+          this.lastRSwipeTime = nowMs;
+          swipe = { hand: 'R', direction, timestampMs: nowMs };
           this.addStreakPoints(history, color, nowMs);
+          this.rHistory = [];
+        } else if (isLeftDrumSwipe) {
+          const direction = 'left';
+          const color = '#f43f5e'; // Rose streak
+          this.lastLSwipeTime = nowMs;
+          swipe = { hand: 'L', direction, timestampMs: nowMs };
+          this.addStreakPoints(history, color, nowMs);
+          this.lHistory = [];
         }
       }
     }

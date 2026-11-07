@@ -101,10 +101,24 @@ function runTests() {
   const gdEdge = new GestureDetector();
   gdEdge.process('L', createMockHand('open', 0.20, 0.5), 2500);
   gdEdge.process('L', createMockHand('open', 0.20, 0.5), 2530);
-  const edgeRes = gdEdge.process('L', createMockHand('open', 0.15, 0.5), 2580);
-  assert(edgeRes.swipe !== null, 'Short flick to left (0.05 distance near edge) must trigger swipe');
+  const edgeRes = gdEdge.process('L', createMockHand('open', 0.13, 0.5), 2580);
+  assert(edgeRes.swipe !== null, 'Short flick to left (0.07 distance near edge) must trigger swipe');
   assert(edgeRes.swipe?.direction === 'left', 'Direction must be left');
   assert(edgeRes.swipe?.hand === 'L', 'Hand must be L');
+
+  // 4C. Test Left Hand Swiping RIGHT must NOT trigger drum swipe (drums only swipe left)
+  const gdLeftRight = new GestureDetector();
+  gdLeftRight.process('L', createMockHand('open', 0.20, 0.5), 2600);
+  gdLeftRight.process('L', createMockHand('open', 0.20, 0.5), 2630);
+  const lrRes = gdLeftRight.process('L', createMockHand('open', 0.35, 0.5), 2680);
+  assert(lrRes.swipe === null, 'Left hand moving right must NOT trigger drum loop swipe');
+
+  // 4D. Test Right Hand Swiping LEFT must NOT trigger synth swipe (synth only swipes right)
+  const gdRightLeft = new GestureDetector();
+  gdRightLeft.process('R', createMockHand('open', 0.65, 0.5), 2700);
+  gdRightLeft.process('R', createMockHand('open', 0.65, 0.5), 2730);
+  const rlRes = gdRightLeft.process('R', createMockHand('open', 0.48, 0.5), 2780);
+  assert(rlRes.swipe === null, 'Right hand moving left must NOT trigger synth loop swipe');
 
   // 5. Test Sudden Flick after Stationary Hand (Peak-stroke / no velocity dilution bug)
   const gdFlick = new GestureDetector();
