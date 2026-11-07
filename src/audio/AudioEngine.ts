@@ -78,7 +78,7 @@ export class AudioEngine {
     return res;
   }
 
-  trigger(fingerId: FingerId, velocity = 0.85): void {
+  trigger(fingerId: FingerId, velocity = 0.85, when = 0): void {
     const ctx = this.ensureContext();
     const buffer = this.buffers.get(fingerId);
     if (!buffer || !this.masterGain) return;
@@ -88,10 +88,11 @@ export class AudioEngine {
 
     const gain = ctx.createGain();
     const clampedVel = Math.max(0.12, Math.min(1.0, velocity));
-    gain.gain.setValueAtTime(clampedVel, ctx.currentTime);
+    const targetTime = when > 0 ? when : ctx.currentTime;
+    gain.gain.setValueAtTime(clampedVel, targetTime);
 
     source.connect(gain);
     gain.connect(this.masterGain);
-    source.start(0);
+    source.start(targetTime);
   }
 }

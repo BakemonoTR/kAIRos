@@ -251,6 +251,58 @@ function runTests() {
   assert(mappedR.rawHands.length === 1, 'Should detect 1 hand');
   assert(mappedR.rawHands[0].hand === 'R', 'Right-side hand must strictly map to R in Theremin mode');
 
+  // 12. Test Drum Loop Tiling across larger master grid
+  const alTile = new AirLooper();
+  const mockCtx = {
+    currentTime: 10.0,
+    sampleRate: 44100,
+    createOscillator: () => ({
+      type: '',
+      frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect() {},
+      start() {},
+      stop() {},
+    }),
+    createGain: () => ({
+      gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect() {},
+    }),
+    createBuffer: () => ({
+      duration: 2.0,
+      getChannelData: () => new Float32Array(100),
+    }),
+    createBufferSource: () => ({ connect() {}, start() {}, buffer: null, loop: false }),
+    createScriptProcessor: () => ({ connect() {}, onaudioprocess: null }),
+    destination: {},
+  } as any;
+  const mockAudio = { trigger: () => {} } as any;
+  const mockDest = {} as any;
+  alTile.init(mockCtx, mockAudio, mockDest);
+
+  // 12A. Record 2 beats of drums
+  mockCtx.currentTime = 10.0;
+  alTile.recordDrumHit(0, 0.85); // hit on beat 1
+  mockCtx.currentTime = 10.5;
+  alTile.recordDrumHit(1, 0.85); // hit on beat 2
+  mockCtx.currentTime = 11.0;
+  const drumRes = alTile.commitDrumLoop();
+  assert(drumRes.beatsCount === 2, 'Initial drum loop should quantize to 2 beats');
+  assert(drumRes.totalCount === 2, 'Initial drum hits should be 2');
+
+  // 12B. Verify lookahead scheduler schedules hits with accurate Web Audio timestamp
+  let scheduledHitTimes: number[] = [];
+  const scheduledAudio = {
+    trigger: (_fid: any, _vel: any, when?: number) => {
+      if (when !== undefined) scheduledHitTimes.push(when);
+    },
+  } as any;
+  (alTile as any).audioEngine = scheduledAudio;
+  // Advance to 11.45 so upcoming hit at 11.50 falls in the 120ms lookahead window [11.45, 11.57)
+  mockCtx.currentTime = 11.45;
+  alTile.update();
+  assert(scheduledHitTimes.length >= 1, 'Lookahead scheduler should schedule upcoming drum hits');
+  assert(Math.abs(scheduledHitTimes[0] - 11.50) < 0.01, 'Scheduled hit time must be on master loop grid (expected 11.50)');
+
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }
 

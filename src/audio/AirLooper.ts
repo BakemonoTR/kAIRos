@@ -35,7 +35,7 @@ export class AirLooper {
   private pendingDrumHits: Array<{ fingerId: FingerId; velocity: number; timeSec: number }> = [];
   private drumHits: DrumLoopHit[] = [];
   private drumIsPlaying = false;
-  private lastScheduledPhase = 0;
+  private nextScheduleTime = 0;
   private drumPhraseStartTime = 0;
   private lastDrumHitTime = 0;
 
@@ -225,10 +225,13 @@ export class AirLooper {
       const beatSec = this.getBeatSec();
       let targetDur: number;
 
+      const rawBeats = Math.max(0.4, (now - this.drumPhraseStartTime) / beatSec);
+      const phraseBeats = this.calculateQuantizedBeats(rawBeats);
+      const phraseDur = phraseBeats * beatSec;
+
       if (this.isMasterLoopActive() && this.masterLoopDuration > 0) {
-        // Synchronize with active master pattern
+        // Master loop already exists (e.g. from synth or prior loop)
         const masterBeats = Math.round(this.masterLoopDuration / beatSec);
-        const rawBeats = (now - this.drumPhraseStartTime) / beatSec;
         if (rawBeats <= masterBeats + 0.25) {
           targetDur = this.masterLoopDuration;
         } else {
@@ -237,34 +240,39 @@ export class AirLooper {
           this.masterLoopDuration = targetDur;
         }
       } else {
-        // First loop: calculate quantized beats strictly in 4 / 8 / 12 / 16 multiples
-        const rawBeats = (now - this.drumPhraseStartTime) / beatSec;
-        const qBeats = this.calculateQuantizedBeats(rawBeats);
-        targetDur = qBeats * beatSec;
+        // First loop establishes master grid
+        targetDur = phraseDur;
         this.masterLoopDuration = targetDur;
         this.masterLoopStartTime = this.drumPhraseStartTime;
       }
 
       if (!this.drumIsPlaying) {
         this.drumHits = [];
-        this.lastScheduledPhase = 0;
         this.drumIsPlaying = true;
       }
 
       const dur = this.masterLoopDuration;
       let addedCount = 0;
 
+      // Map pending hits onto loop grid.
+      // If the recorded drum phrase is shorter than the master loop duration (e.g. 2-beat groove in a 4 or 8-beat song),
+      // tile the groove across the entire master duration so drums NEVER stop playing!
+      const stepDur = Math.min(phraseDur, dur);
+
       for (const hit of this.pendingDrumHits) {
-        const phase = ((hit.timeSec - this.masterLoopStartTime) % dur + dur) % dur;
-        this.drumHits.push({
-          fingerId: hit.fingerId,
-          velocity: hit.velocity,
-          phaseSec: phase,
-        });
-        addedCount++;
+        const basePhase = ((hit.timeSec - this.masterLoopStartTime) % stepDur + stepDur) % stepDur;
+        for (let offset = basePhase; offset < dur - 0.01; offset += stepDur) {
+          this.drumHits.push({
+            fingerId: hit.fingerId,
+            velocity: hit.velocity,
+            phaseSec: offset,
+          });
+          addedCount++;
+        }
       }
 
       this.pendingDrumHits = [];
+      this.nextScheduleTime = now;
       const beatsCount = Math.round(dur / beatSec);
 
       return {
@@ -290,6 +298,7 @@ export class AirLooper {
     this.drumIsPlaying = false;
     this.drumPhraseStartTime = 0;
     this.lastDrumHitTime = 0;
+    this.nextScheduleTime = 0;
     if (this.synthLayers.length === 0) {
       this.masterLoopDuration = 0;
       this.masterLoopStartTime = 0;
@@ -343,12 +352,14 @@ export class AirLooper {
 
       this.playSwipeChime('synth');
       const beatSec = this.getBeatSec();
+      const oldMasterDur = this.masterLoopDuration;
       let targetDur: number;
+
+      const rawBeats = Math.max(0.4, (now - this.synthPhraseStartTime) / beatSec);
 
       if (this.isMasterLoopActive() && this.masterLoopDuration > 0) {
         // Master loop already exists! Lock to full master pattern
         const masterBeats = Math.round(this.masterLoopDuration / beatSec);
-        const rawBeats = (now - this.synthPhraseStartTime) / beatSec;
         if (rawBeats <= masterBeats + 0.25) {
           targetDur = this.masterLoopDuration;
         } else {
@@ -357,12 +368,26 @@ export class AirLooper {
           this.masterLoopDuration = targetDur;
         }
       } else {
-        // First loop: calculate quantized beats strictly in 4 / 8 / 12 / 16 multiples
-        const rawBeats = (now - this.synthPhraseStartTime) / beatSec;
+        // First loop establishes master grid
         const qBeats = this.calculateQuantizedBeats(rawBeats);
         targetDur = qBeats * beatSec;
         this.masterLoopDuration = targetDur;
-        this.masterLoopStartTime = this.synthPhraseStartTime;
+        const pruneSec = 0.15;
+        this.masterLoopStartTime = now - pruneSec - targetDur;
+      }
+
+      // If master loop duration expanded, tile existing drum hits across the new duration so drums don't stop!
+      if (this.drumHits.length > 0 && targetDur > oldMasterDur && oldMasterDur > 0) {
+        const existingHits = [...this.drumHits];
+        for (let t = oldMasterDur; t < targetDur - 0.01; t += oldMasterDur) {
+          for (const h of existingHits) {
+            this.drumHits.push({
+              fingerId: h.fingerId,
+              velocity: h.velocity,
+              phaseSec: h.phaseSec + t,
+            });
+          }
+        }
       }
 
       const dur = targetDur;
@@ -374,10 +399,18 @@ export class AirLooper {
       const outL = layerBuffer.getChannelData(0);
       const outR = layerBuffer.getChannelData(1);
 
-      // Prune trailing 200ms of audio buffer containing the hand swipe motion
-      const swipePruneSamples = Math.floor(sr * 0.20);
-      const endOffset = (this.writeIndex - swipePruneSamples + cap) % cap;
-      const startIdx = (endOffset - numSamples + cap) % cap;
+      // Extract exactly one master cycle [phase 0.0 -> phase dur] from circular buffer
+      // aligned to this.masterLoopStartTime so synth and drums are in 100% lockstep sync
+      const pruneSec = 0.15;
+      const audioEndTime = now - pruneSec;
+      const T0 = this.masterLoopStartTime;
+
+      const phaseAtAudioEnd = ((audioEndTime - T0) % dur + dur) % dur;
+      const cycleEndTime = audioEndTime - phaseAtAudioEnd;
+      const cycleStartTime = cycleEndTime - dur;
+
+      const ageSec = Math.max(dur, now - cycleStartTime);
+      const startIdx = (this.writeIndex - Math.floor(ageSec * sr) + cap) % cap;
 
       for (let i = 0; i < numSamples; i++) {
         const idx = (startIdx + i) % cap;
@@ -406,19 +439,14 @@ export class AirLooper {
       source.connect(layerGain);
       layerGain.connect(this.masterDestination);
 
-      // Safe offset aligned to master loop phase
-      const currentPhase = this.getCurrentPhase();
-      const bufferDuration = layerBuffer.duration;
-      let safeOffset = 0;
-      if (bufferDuration > 0.05) {
-        safeOffset = (currentPhase % bufferDuration + bufferDuration) % bufferDuration;
-        safeOffset = Math.max(0, Math.min(bufferDuration - 0.02, safeOffset));
-      }
+      // Current master phase at this exact moment
+      const currentPhase = ((now - T0) % dur + dur) % dur;
+      const safeOffset = Math.max(0, Math.min(dur - 0.01, currentPhase));
 
       try {
-        source.start(this.ctx.currentTime, safeOffset);
+        source.start(now, safeOffset);
       } catch {
-        source.start(this.ctx.currentTime);
+        source.start(now);
       }
 
       this.synthLayers.push({
@@ -472,6 +500,7 @@ export class AirLooper {
     this.clearSynthLoop();
     this.masterLoopDuration = 0;
     this.masterLoopStartTime = 0;
+    this.nextScheduleTime = 0;
   }
 
   update(): void {
@@ -480,30 +509,32 @@ export class AirLooper {
     }
 
     try {
-      const currentPhase = this.getCurrentPhase();
-      const prevPhase = this.lastScheduledPhase;
-      const wrapped = currentPhase < prevPhase;
+      const now = this.ctx.currentTime;
+      const dur = this.masterLoopDuration || this.getBeatSec() * 2;
+      const T0 = this.masterLoopStartTime;
 
-      for (const hit of this.drumHits) {
-        const p = hit.phaseSec;
-        let shouldTrigger = false;
+      if (this.nextScheduleTime < now) {
+        this.nextScheduleTime = now;
+      }
 
-        if (!wrapped) {
-          if (p >= prevPhase && p < currentPhase) {
-            shouldTrigger = true;
+      // High-precision Web Audio lookahead scheduler (120ms window)
+      const lookaheadSec = 0.12;
+      const scheduleUntil = now + lookaheadSec;
+
+      const startCycle = Math.floor((this.nextScheduleTime - T0) / dur);
+      const endCycle = Math.floor((scheduleUntil - T0) / dur) + 1;
+
+      for (let cycle = startCycle; cycle <= endCycle; cycle++) {
+        const cycleStart = T0 + cycle * dur;
+        for (const hit of this.drumHits) {
+          const hitTime = cycleStart + hit.phaseSec;
+          if (hitTime >= this.nextScheduleTime && hitTime < scheduleUntil) {
+            this.audioEngine.trigger(hit.fingerId, hit.velocity, Math.max(now, hitTime));
           }
-        } else {
-          if (p >= prevPhase || p < currentPhase) {
-            shouldTrigger = true;
-          }
-        }
-
-        if (shouldTrigger) {
-          this.audioEngine.trigger(hit.fingerId, hit.velocity);
         }
       }
 
-      this.lastScheduledPhase = currentPhase;
+      this.nextScheduleTime = scheduleUntil;
     } catch (err) {
       console.warn('AirLooper update hatası:', err);
     }
