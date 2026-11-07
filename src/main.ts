@@ -285,8 +285,9 @@ async function bootstrap(): Promise<void> {
     store.emit('statusMessage', 'Tüm döngüler temizlendi');
   });
 
-  // Metronome box click/touch handler on camera stage
+  // Metronome box click/touch handler on camera stage (only active in single-finger touch mode)
   videoStage.addEventListener('pointerdown', (e) => {
+    if (!gestureDetector.isLeftPointerMode()) return;
     const rect = overlayCanvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
@@ -518,56 +519,36 @@ async function bootstrap(): Promise<void> {
         );
         overlay.setMetronomeState(metroState);
 
-        // 1C. Metronome Hand Hover & Gesture Trigger Check (Sol Üst Köşe)
-        let isHandInMetroZone = false;
-        let isHandNearMetroZone = false;
-
-        for (const rawHand of mapped.rawHands) {
-          const lms = rawHand.landmarks;
-          const palm = lms[9] || lms[0];
-          const tip = lms[8];
-          if (
-            (tip && tip.x <= 0.22 && tip.y <= 0.24) ||
-            (palm && palm.x <= 0.22 && palm.y <= 0.24)
-          ) {
-            isHandInMetroZone = true;
-            break;
-          }
-          if (
-            (tip && tip.x <= 0.26 && tip.y <= 0.28) ||
-            (palm && palm.x <= 0.26 && palm.y <= 0.28)
-          ) {
-            isHandNearMetroZone = true;
-          }
-        }
-
-        metronome.setHovered(isHandInMetroZone);
-
-        if (isHandInMetroZone) {
-          if (metroZoneArmed && nowMs - lastMetroToggleMs > 600) {
-            const newState = metronome.toggle();
-            lastMetroToggleMs = nowMs;
-            metroZoneArmed = false;
-            overlay.triggerMetroFlash(nowMs);
-            overlay.showToast(newState ? '[METRONOM: AÇIK]' : '[METRONOM: KAPALI]', '#4ade80');
-          }
-        } else if (!isHandNearMetroZone && nowMs - lastMetroToggleMs > 350) {
-          metroZoneArmed = true;
-        }
-
-        // 2. Gesture & Swipe detection
+        // 2. Gesture & Swipe detection (also updates Left-Hand Single-Finger Touch Mode)
         let rightHandDetected = false;
         let isLeftFastMoving = false;
+        let isLeftClosingPalm = false;
 
         for (const rawHand of mapped.rawHands) {
           const handKey = rawHand.hand;
-          const { gestureState, swipe } = gestureDetector.process(
+          const { gestureState, swipe, pointerModeToggled } = gestureDetector.process(
             handKey,
             rawHand.landmarks,
             nowMs
           );
 
           if (handKey === 'L') {
+            if (pointerModeToggled) {
+              const isPointer = gestureDetector.isLeftPointerMode();
+              overlay.setLeftPointerMode(isPointer);
+              leftLockoutUntilMs = nowMs + 350;
+              overlay.showToast(
+                isPointer ? '[DOKUNMA MODU: AÇIK]' : '[DOKUNMA MODU: KAPALI]',
+                '#4ade80'
+              );
+              const tip = rawHand.landmarks[8];
+              metroZoneArmed = !(tip && tip.x <= 0.22 && tip.y <= 0.24);
+            }
+
+            if (gestureState.isClosed || gestureState.clenchRatio > 0.38) {
+              isLeftClosingPalm = true;
+            }
+
             let palmSpeed = 0;
             if (prevPalmL && dt > 0) {
               palmSpeed =
@@ -617,7 +598,7 @@ async function bootstrap(): Promise<void> {
                   }
                   refreshLooperUi();
                 }
-              } else if (swipe.hand === 'L' && swipe.direction === 'left') {
+              } else if (swipe.hand === 'L' && swipe.direction === 'left' && !gestureDetector.isLeftPointerMode()) {
                 // Wall bump / swipe to the left on left hand
                 overlay.triggerWallBump('L', nowMs);
                 leftLockoutUntilMs = nowMs + 280; // Lockout to prevent post-bump tap noise
@@ -667,12 +648,49 @@ async function bootstrap(): Promise<void> {
           }
         }
 
+        // 2B. Metronome Single-Finger Touch Check (Sol Üst Köşe — SADECE Sol El Tek Parmak Modunda!)
+        let isHandInMetroZone = false;
+        let isHandNearMetroZone = false;
+
+        if (gestureDetector.isLeftPointerMode()) {
+          for (const rawHand of mapped.rawHands) {
+            if (rawHand.hand !== 'L') continue;
+            const tip = rawHand.landmarks[8]; // Sadece sol işaret parmağı ucu
+            if (tip && tip.x <= 0.22 && tip.y <= 0.24) {
+              isHandInMetroZone = true;
+              break;
+            }
+            if (tip && tip.x <= 0.26 && tip.y <= 0.28) {
+              isHandNearMetroZone = true;
+            }
+          }
+        }
+
+        metronome.setHovered(isHandInMetroZone);
+
+        if (gestureDetector.isLeftPointerMode()) {
+          if (isHandInMetroZone) {
+            if (metroZoneArmed && nowMs - lastMetroToggleMs > 600) {
+              const newState = metronome.toggle();
+              lastMetroToggleMs = nowMs;
+              metroZoneArmed = false;
+              overlay.triggerMetroFlash(nowMs);
+              overlay.showToast(newState ? '[METRONOM: AÇIK]' : '[METRONOM: KAPALI]', '#4ade80');
+            }
+          } else if (!isHandNearMetroZone && nowMs - lastMetroToggleMs > 350) {
+            metroZoneArmed = true;
+          }
+        } else {
+          metroZoneArmed = true;
+        }
+
         if (settings.appMode === 'theremin' && !rightHandDetected) {
           theremin.silence();
           overlay.setThereminState(null);
         }
 
         overlay.setAppMode(settings.appMode);
+        overlay.setLeftPointerMode(gestureDetector.isLeftPointerMode());
         overlay.setStreakPoints(gestureDetector.getStreakPoints(nowMs));
         overlay.setLooperStatus(airLooper.getStatus());
         overlay.setLivePhraseMetrics(airLooper.getLivePhraseMetrics());
@@ -682,14 +700,21 @@ async function bootstrap(): Promise<void> {
           airLooper.isSynthCapturing()
         );
 
-        const isLeftSuppressed = isLeftFastMoving || nowMs < leftLockoutUntilMs;
         const { taps, releases } = tapDetector.process(mapped, slots, settings, nowMs);
+        const leftSimultaneousTaps = taps.filter((t) => t.fingerId < 5).length;
+        const isLeftSuppressed =
+          gestureDetector.isLeftPointerMode() ||
+          isLeftClosingPalm ||
+          leftSimultaneousTaps >= 3 ||
+          isLeftFastMoving ||
+          nowMs < leftLockoutUntilMs;
+
         for (const tap of taps) {
           // In theremin mode, right hand taps are ignored so right hand is exclusively Theremin
           if (settings.appMode === 'theremin' && tap.fingerId >= 5) {
             continue;
           }
-          // Suppress accidental drum taps when left hand is in rapid motion or swiping
+          // Suppress accidental drum taps when left hand is in pointer mode, closing palm, or rapid motion
           if (tap.fingerId < 5 && isLeftSuppressed) {
             continue;
           }

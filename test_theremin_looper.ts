@@ -569,6 +569,35 @@ function runTests() {
     );
   }
 
+  // 15. Test Left-Hand Single-Finger Touch Mode ("Tek Parmaklı Dokunma Modu": Sol Avuç Kapatıp Açınca)
+  {
+    const gdPointer = new GestureDetector();
+    assert(gdPointer.isLeftPointerMode() === false, 'Left pointer mode should initially be false');
+
+    // Open left hand -> Close left palm -> Open left palm => toggles ON
+    gdPointer.process('L', createMockHand('open', 0.35, 0.50), 10000);
+    gdPointer.process('L', createMockHand('closed', 0.35, 0.50), 10040);
+    gdPointer.process('L', createMockHand('closed', 0.35, 0.50), 10080);
+    const open1 = gdPointer.process('L', createMockHand('open', 0.35, 0.50), 10120);
+    const open2 = gdPointer.process('L', createMockHand('open', 0.35, 0.50), 10160);
+
+    assert(gdPointer.isLeftPointerMode() === true, 'Closing and opening left palm must toggle leftPointerMode ON');
+    assert(open1.pointerModeToggled || open2.pointerModeToggled, 'pointerModeToggled flag must be true on toggle frame');
+
+    // While in leftPointerMode, hitting the left wall must NOT trigger drum loop commit
+    const wallWhilePointer = gdPointer.process('L', createMockHand('open', 0.08, 0.50), 10700);
+    assert(wallWhilePointer.swipe === null, 'Left wall bump must be disabled while in single-finger touch mode');
+
+    // Close and open left palm again => toggles OFF
+    gdPointer.process('L', createMockHand('closed', 0.35, 0.50), 11000);
+    gdPointer.process('L', createMockHand('closed', 0.35, 0.50), 11040);
+    const off1 = gdPointer.process('L', createMockHand('open', 0.35, 0.50), 11080);
+    const off2 = gdPointer.process('L', createMockHand('open', 0.35, 0.50), 11120);
+
+    assert(gdPointer.isLeftPointerMode() === false, 'Closing and opening left palm again must toggle leftPointerMode OFF');
+    assert(off1.pointerModeToggled || off2.pointerModeToggled, 'pointerModeToggled flag must be true when toggling OFF');
+  }
+
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }
 

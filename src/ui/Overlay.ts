@@ -20,6 +20,12 @@ const HAND_CONNECTIONS: Array<[number, number]> = [
   [0, 17],
 ];
 
+// Tek parmaklı dokunma modunda sol elde SADECE işaret parmağı kemikleri çizilir
+const INDEX_FINGER_CONNECTIONS: Array<[number, number]> = [
+  [0, 5], [5, 6], [6, 7], [7, 8],
+];
+const INDEX_FINGER_JOINTS = [0, 5, 6, 7];
+
 interface HitRipple {
   fingerId: FingerId;
   velocity: number;
@@ -61,12 +67,21 @@ export class Overlay {
   private wallHitRightMs = 0;
   private metronomeState: MetronomeState | null = null;
   private metroFlashMs = 0;
+  private leftPointerMode = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context alınamadı.');
     this.ctx = ctx;
+  }
+
+  setLeftPointerMode(enabled: boolean): void {
+    this.leftPointerMode = enabled;
+  }
+
+  isLeftPointerMode(): boolean {
+    return this.leftPointerMode;
   }
 
   setAppMode(mode: AppMode): void {
@@ -217,24 +232,44 @@ export class Overlay {
     for (const handObj of mapped.rawHands) {
       const lms = handObj.landmarks;
       const isRightHand = handObj.hand === 'R';
+      const isLeftPointer = handObj.hand === 'L' && this.leftPointerMode;
       const isThereminRight = this.appMode === 'theremin' && isRightHand;
 
       ctx.save();
-      ctx.strokeStyle = isThereminRight ? 'rgba(129, 140, 248, 0.45)' : 'rgba(148, 163, 184, 0.35)';
-      ctx.lineWidth = isThereminRight ? 2.5 : 2;
-      ctx.beginPath();
-      for (const [a, b] of HAND_CONNECTIONS) {
-        ctx.moveTo(toX(lms[a].x), toY(lms[a].y));
-        ctx.lineTo(toX(lms[b].x), toY(lms[b].y));
-      }
-      ctx.stroke();
-
-      ctx.fillStyle = isThereminRight ? 'rgba(165, 180, 252, 0.6)' : 'rgba(226, 232, 240, 0.45)';
-      for (let i = 0; i < lms.length; i++) {
-        if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
+      if (isLeftPointer) {
+        // Tek parmaklı dokunma modu: SADECE sol işaret parmağında kemik ve eklem çizilir
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(toX(lms[i].x), toY(lms[i].y), 2.5, 0, Math.PI * 2);
-        ctx.fill();
+        for (const [a, b] of INDEX_FINGER_CONNECTIONS) {
+          ctx.moveTo(toX(lms[a].x), toY(lms[a].y));
+          ctx.lineTo(toX(lms[b].x), toY(lms[b].y));
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = '#4ade80';
+        for (const idx of INDEX_FINGER_JOINTS) {
+          ctx.beginPath();
+          ctx.arc(toX(lms[idx].x), toY(lms[idx].y), 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.strokeStyle = isThereminRight ? 'rgba(129, 140, 248, 0.45)' : 'rgba(148, 163, 184, 0.35)';
+        ctx.lineWidth = isThereminRight ? 2.5 : 2;
+        ctx.beginPath();
+        for (const [a, b] of HAND_CONNECTIONS) {
+          ctx.moveTo(toX(lms[a].x), toY(lms[a].y));
+          ctx.lineTo(toX(lms[b].x), toY(lms[b].y));
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = isThereminRight ? 'rgba(165, 180, 252, 0.6)' : 'rgba(226, 232, 240, 0.45)';
+        for (let i = 0; i < lms.length; i++) {
+          if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
+          ctx.beginPath();
+          ctx.arc(toX(lms[i].x), toY(lms[i].y), 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       ctx.restore();
     }
@@ -242,6 +277,23 @@ export class Overlay {
     // 2. Fingertip colored dots + labels + hit ripples
     for (const [fingerId, fData] of mapped.fingers.entries()) {
       if (this.appMode === 'theremin' && fingerId >= 5) {
+        continue;
+      }
+
+      // Sol el tek parmak dokunma modundayken sol elde sadece işaret parmağı ucu (fingerId === 1) çizilir
+      if (this.leftPointerMode && fingerId < 5) {
+        if (fingerId !== 1) continue;
+        const x = toX(fData.tip.x);
+        const y = toY(fData.tip.y);
+        ctx.save();
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#050a06';
+        ctx.stroke();
+        ctx.restore();
         continue;
       }
 

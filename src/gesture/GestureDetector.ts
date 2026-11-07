@@ -29,6 +29,12 @@ export class GestureDetector {
   private rIsClosed = false;
   private lIsClosed = false;
 
+  // Left-hand single-finger touch mode ("Tek parmaklı dokunma modu" — avuç kapatıp açınca geçiş)
+  private leftPointerMode = false;
+  private lPendingToggleClose = false;
+  private lCloseStartMs = 0;
+  private lastLeftPointerToggleMs = 0;
+
   private rHistory: PointHistoryItem[] = [];
   private lHistory: PointHistoryItem[] = [];
 
@@ -52,6 +58,10 @@ export class GestureDetector {
     this.lClenchSmoothed = 0;
     this.rIsClosed = false;
     this.lIsClosed = false;
+    this.leftPointerMode = false;
+    this.lPendingToggleClose = false;
+    this.lCloseStartMs = 0;
+    this.lastLeftPointerToggleMs = 0;
     this.rHistory = [];
     this.lHistory = [];
     this.leftWallArmed = false;
@@ -61,6 +71,14 @@ export class GestureDetector {
     this.lastLeftWallTime = 0;
     this.lastRightWallTime = 0;
     this.streakPoints = [];
+  }
+
+  isLeftPointerMode(): boolean {
+    return this.leftPointerMode;
+  }
+
+  setLeftPointerMode(enabled: boolean): void {
+    this.leftPointerMode = enabled;
   }
 
   private dist3D(a: Point3D, b: Point3D): number {
@@ -162,13 +180,15 @@ export class GestureDetector {
   ): {
     gestureState: HandGestureState;
     swipe: SwipeEvent | null;
+    pointerModeToggled: boolean;
   } {
-    const { palmCenter } = this.computeHandGeometry(landmarks);
+    const { palmCenter, handScale } = this.computeHandGeometry(landmarks);
     const rawClench = this.computeClenchRatio(landmarks);
 
     const isRight = handType === 'R';
     let smoothed: number;
     let isClosed: boolean;
+    let pointerModeToggled = false;
 
     if (isRight) {
       this.rClenchSmoothed = this.rClenchSmoothed * 0.65 + rawClench * 0.35;
@@ -180,14 +200,47 @@ export class GestureDetector {
       }
       isClosed = this.rIsClosed;
     } else {
-      this.lClenchSmoothed = this.lClenchSmoothed * 0.65 + rawClench * 0.35;
+      this.lClenchSmoothed = this.lClenchSmoothed * 0.50 + rawClench * 0.50;
       smoothed = this.lClenchSmoothed;
       if (this.lIsClosed) {
         if (smoothed < 0.38) this.lIsClosed = false;
       } else {
-        if (smoothed > 0.52) this.lIsClosed = true;
+        if (smoothed > 0.50) this.lIsClosed = true;
       }
       isClosed = this.lIsClosed;
+
+      // Detect Left Hand Palm Close -> Open cycle ("avucunu kapatıp açınca")
+      // Check that the index finger is also curled when closing the palm so pointing with 1 finger doesn't false-close
+      const indexTip = landmarks[8] ?? palmCenter;
+      const indexDistRatio = this.dist3D(indexTip, palmCenter) / handScale;
+      const indexCurl =
+        landmarks.length >= 21
+          ? this.computeJointCurl(landmarks[5], landmarks[6], landmarks[8])
+          : 0;
+      const isIndexCurled = indexCurl > 0.38 || indexDistRatio < 0.95;
+
+      if (this.lIsClosed && isIndexCurled) {
+        if (!this.lPendingToggleClose) {
+          this.lPendingToggleClose = true;
+          this.lCloseStartMs = nowMs;
+        } else if (nowMs - this.lCloseStartMs > 2500) {
+          // Held closed too long (>2.5s), expire toggle gesture
+          this.lPendingToggleClose = false;
+        }
+      } else if (!this.lIsClosed && this.lPendingToggleClose) {
+        const closedDuration = nowMs - this.lCloseStartMs;
+        this.lPendingToggleClose = false;
+        if (
+          closedDuration >= 20 &&
+          closedDuration <= 2500 &&
+          nowMs - this.lastLeftPointerToggleMs > 300
+        ) {
+          this.leftPointerMode = !this.leftPointerMode;
+          this.lastLeftPointerToggleMs = nowMs;
+          this.lastLeftWallTime = nowMs;
+          pointerModeToggled = true;
+        }
+      }
     }
 
     const history = isRight ? this.rHistory : this.lHistory;
@@ -238,6 +291,7 @@ export class GestureDetector {
         nowMs - this.lastLSwipeTime > this.wallCooldownMs &&
         nowMs - this.lastLeftWallTime > this.wallCooldownMs;
       if (
+        !this.leftPointerMode &&
         this.leftWallArmed &&
         !isLeftArmLeading &&
         handCoreX <= 0.13 &&
@@ -363,7 +417,7 @@ export class GestureDetector {
       velocityY: velY,
     };
 
-    return { gestureState, swipe };
+    return { gestureState, swipe, pointerModeToggled };
   }
 
   private addStreakPoints(history: PointHistoryItem[], color: string, nowMs: number): void {
