@@ -1,5 +1,6 @@
 import { GestureDetector } from './src/gesture/GestureDetector';
 import { ThereminEngine } from './src/audio/ThereminEngine';
+import { AirLooper } from './src/audio/AirLooper';
 import { Point3D } from './src/types';
 
 function createMockHand(clench: 'open' | 'closed', x = 0.5, y = 0.5): Point3D[] {
@@ -119,6 +120,16 @@ function runTests() {
       1
     )}Hz ${lowNote.noteName}, high: ${highNote.frequency.toFixed(1)}Hz ${highNote.noteName})`
   );
+
+  // 7. Test Musical Measure Quantization (4, 8, 12, 16 beats)
+  const al = new AirLooper();
+  assert(al.calculateQuantizedBeats(2.0) === 4, '2 beats phrase should quantize to 4 beats (1 bar)');
+  assert(al.calculateQuantizedBeats(3.8) === 4, '3.8 beats phrase should quantize to 4 beats (1 bar)');
+  assert(al.calculateQuantizedBeats(4.2) === 4, '4.2 beats phrase should quantize to 4 beats (1 bar)');
+  assert(al.calculateQuantizedBeats(4.6) === 8, '4.6 beats (exceeded 4 beats) should quantize to 8 beats (2 bars)');
+  assert(al.calculateQuantizedBeats(7.8) === 8, '7.8 beats phrase should quantize to 8 beats (2 bars)');
+  assert(al.calculateQuantizedBeats(8.5) === 12, '8.5 beats (exceeded 8 beats) should quantize to 12 beats (3 bars)');
+  assert(al.calculateQuantizedBeats(12.5) === 16, '12.5 beats (exceeded 12 beats) should quantize to 16 beats (4 bars)');
 
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }

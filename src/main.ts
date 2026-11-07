@@ -488,13 +488,14 @@ async function bootstrap(): Promise<void> {
               if (swipe.hand === 'R') {
                 const res = airLooper.commitSynthLoop();
                 if (res.totalLayers > 0) {
+                  const bars = Math.round(res.beatsCount / 4);
                   overlay.showToast(
-                    `🔁 🎹 Synth Döngüsü Başlatıldı! (${res.totalLayers}. Katman • ${res.durationSec.toFixed(1)} sn)`,
+                    `🔁 🎹 Synth: ${res.beatsCount} Vuruş (${bars} Bar • Katman ${res.totalLayers})`,
                     '#818cf8'
                   );
                   store.emit(
                     'statusMessage',
-                    `🎹 Synth döngüye alındı (${res.totalLayers}. Katman • ${res.durationSec.toFixed(1)} sn)`
+                    `🎹 Synth döngüye alındı (${res.beatsCount} Vuruş • ${bars} Bar • ${res.durationSec.toFixed(1)} sn)`
                   );
                 } else {
                   overlay.showToast('ℹ️ Henüz synth çalınmadı (Yumruk yapıp melodi çal)', '#94a3b8');
@@ -504,13 +505,14 @@ async function bootstrap(): Promise<void> {
               } else if (swipe.hand === 'L') {
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
+                  const bars = Math.round(res.beatsCount / 4);
                   overlay.showToast(
-                    `🔁 🥁 Davul Döngüsü Başlatıldı! (${res.totalCount} Vuruş • ${res.durationSec.toFixed(1)} sn)`,
+                    `🔁 🥁 Davul: ${res.beatsCount} Vuruş (${bars} Bar • ${res.totalCount} Vuruş)`,
                     '#f43f5e'
                   );
                   store.emit(
                     'statusMessage',
-                    `🥁 Davul döngüye alındı (${res.totalCount} Vuruş • ${res.durationSec.toFixed(1)} sn)`
+                    `🥁 Davul döngüye alındı (${res.beatsCount} Vuruş • ${bars} Bar • ${res.durationSec.toFixed(1)} sn)`
                   );
                 } else {
                   overlay.showToast('ℹ️ Henüz davul çalınmadı (Sol el parmaklarınla vur)', '#94a3b8');
