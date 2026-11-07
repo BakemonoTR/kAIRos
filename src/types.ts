@@ -42,6 +42,32 @@ export interface LooperStatus {
   drumIsPlaying: boolean;
 }
 
+export interface LivePhraseMetrics {
+  bpm: number;
+  drum: {
+    status: 'idle' | 'recording' | 'looping';
+    bar: number;
+    beat: number;
+    hitsCount: number;
+    targetBars: number;
+    totalBars: number;
+  };
+  synth: {
+    status: 'idle' | 'recording' | 'looping';
+    bar: number;
+    beat: number;
+    layersCount: number;
+    targetBars: number;
+    totalBars: number;
+  };
+  master: {
+    active: boolean;
+    bar: number;
+    beat: number;
+    totalBars: number;
+  };
+}
+
 export type MidiMapMode = 'drum' | 'melodic' | 'custom';
 export type QuantizeMode = 'off' | '1/8' | '1/16';
 

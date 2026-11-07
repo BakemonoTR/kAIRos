@@ -1,4 +1,4 @@
-import { FingerId, LooperStatus } from '../types';
+import { FingerId, LivePhraseMetrics, LooperStatus } from '../types';
 import { AudioEngine } from './AudioEngine';
 
 interface DrumLoopHit {
@@ -120,18 +120,19 @@ export class AirLooper {
   }
 
   /**
-   * Quantizes elapsed beats to exact 4-beat bar multiples:
-   * <= 4 beats -> 4 beats (1 bar)
-   * 4 < beats <= 8 -> 8 beats (2 bars)
-   * 8 < beats <= 12 -> 12 beats (3 bars)
-   * 12 < beats <= 16 -> 16 beats (4 bars)
+   * Quantizes elapsed beats in strict 2-bar multiples (8 beats per 2 bars):
+   * <= 2 bars (<= 8 beats)   -> 2 bars (8 beats)
+   * 2 < bars <= 4 (<= 16 beats) -> 4 bars (16 beats)
+   * 4 < bars <= 6 (<= 24 beats) -> 6 bars (24 beats)
+   * 6 < bars <= 8 (<= 32 beats) -> 8 bars (32 beats)
    */
   calculateQuantizedBeats(rawElapsedBeats: number): number {
     const beatsPerBar = 4;
-    // 0.25 beat tolerance for natural end-of-bar release
-    const effectiveBeats = Math.max(0.5, rawElapsedBeats - 0.25);
-    const bars = Math.max(1, Math.ceil(effectiveBeats / beatsPerBar));
-    return bars * beatsPerBar;
+    const rawBars = rawElapsedBeats / beatsPerBar;
+    // 0.25 bar tolerance for natural end-of-phrase release
+    const effectiveBars = Math.max(0.2, rawBars - 0.25);
+    const quantizedBars = Math.max(2, Math.ceil(effectiveBars / 2) * 2);
+    return quantizedBars * beatsPerBar;
   }
 
   playSwipeChime(type: 'drum' | 'synth'): void {
@@ -513,6 +514,89 @@ export class AirLooper {
       synthIsPlaying: this.synthLayers.length > 0,
       drumEventsCount: this.drumHits.length,
       drumIsPlaying: this.drumIsPlaying,
+    };
+  }
+
+  getLivePhraseMetrics(): LivePhraseMetrics {
+    const beatSec = this.getBeatSec();
+    const now = this.ctx ? this.ctx.currentTime : 0;
+
+    // Master loop phase
+    const masterDuration = this.masterLoopDuration || beatSec * 8; // default 2 bars
+    const masterBars = Math.max(2, Math.round(masterDuration / (beatSec * 4)));
+    const masterPhaseSec = this.getCurrentPhase();
+    const masterTotalBeats = masterPhaseSec / beatSec;
+    const masterBar = Math.min(masterBars, Math.floor(masterTotalBeats / 4) + 1);
+    const masterBeat = (Math.floor(masterTotalBeats) % 4) + 1;
+
+    // Drum phrase metrics
+    let drumStatus: 'idle' | 'recording' | 'looping' = 'idle';
+    let drumBar = 1;
+    let drumBeat = 1;
+    let drumTargetBars = 2;
+    let drumTotalBars = masterBars;
+
+    if (this.isDrumCapturing()) {
+      drumStatus = 'recording';
+      const elapsed = Math.max(0, now - this.drumPhraseStartTime);
+      const elapsedBeats = elapsed / beatSec;
+      drumBar = Math.floor(elapsedBeats / 4) + 1;
+      drumBeat = (Math.floor(elapsedBeats) % 4) + 1;
+      drumTargetBars = this.calculateQuantizedBeats(elapsedBeats) / 4;
+      drumTotalBars = drumTargetBars;
+    } else if (this.drumIsPlaying) {
+      drumStatus = 'looping';
+      drumBar = masterBar;
+      drumBeat = masterBeat;
+      drumTotalBars = masterBars;
+    }
+
+    // Synth phrase metrics
+    let synthStatus: 'idle' | 'recording' | 'looping' = 'idle';
+    let synthBar = 1;
+    let synthBeat = 1;
+    let synthTargetBars = 2;
+    let synthTotalBars = masterBars;
+
+    if (this.isSynthCapturing()) {
+      synthStatus = 'recording';
+      const elapsed = Math.max(0, now - this.synthPhraseStartTime);
+      const elapsedBeats = elapsed / beatSec;
+      synthBar = Math.floor(elapsedBeats / 4) + 1;
+      synthBeat = (Math.floor(elapsedBeats) % 4) + 1;
+      synthTargetBars = this.calculateQuantizedBeats(elapsedBeats) / 4;
+      synthTotalBars = synthTargetBars;
+    } else if (this.synthLayers.length > 0) {
+      synthStatus = 'looping';
+      synthBar = masterBar;
+      synthBeat = masterBeat;
+      synthTotalBars = masterBars;
+    }
+
+    return {
+      bpm: this.bpm,
+      drum: {
+        status: drumStatus,
+        bar: drumBar,
+        beat: drumBeat,
+        hitsCount: drumStatus === 'recording' ? this.pendingDrumHits.length : this.drumHits.length,
+        targetBars: drumTargetBars,
+        totalBars: drumTotalBars,
+      },
+      synth: {
+        status: synthStatus,
+        bar: synthBar,
+        beat: synthBeat,
+        layersCount: this.synthLayers.length,
+        targetBars: synthTargetBars,
+        totalBars: synthTotalBars,
+      },
+      master: {
+        active: this.isMasterLoopActive(),
+        bar: masterBar,
+        beat: masterBeat,
+        totalBars: masterBars,
+      },
     };
   }
 }

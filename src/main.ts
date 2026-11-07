@@ -594,6 +594,7 @@ async function bootstrap(): Promise<void> {
         overlay.setAppMode(settings.appMode);
         overlay.setStreakPoints(gestureDetector.getStreakPoints(nowMs));
         overlay.setLooperStatus(airLooper.getStatus());
+        overlay.setLivePhraseMetrics(airLooper.getLivePhraseMetrics());
         overlay.setCapturingState(
           airLooper.isDrumCapturing(),
           airLooper.getPendingDrumCount(),

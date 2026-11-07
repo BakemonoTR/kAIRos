@@ -153,15 +153,22 @@ function runTests() {
     )}Hz ${lowNote.noteName}, high: ${highNote.frequency.toFixed(1)}Hz ${highNote.noteName})`
   );
 
-  // 7. Test Musical Measure Quantization (4, 8, 12, 16 beats)
+  // 7. Test Musical Measure Quantization in 2-Bar Steps (8, 16, 24, 32 beats)
   const al = new AirLooper();
-  assert(al.calculateQuantizedBeats(2.0) === 4, '2 beats phrase should quantize to 4 beats (1 bar)');
-  assert(al.calculateQuantizedBeats(3.8) === 4, '3.8 beats phrase should quantize to 4 beats (1 bar)');
-  assert(al.calculateQuantizedBeats(4.2) === 4, '4.2 beats phrase should quantize to 4 beats (1 bar)');
-  assert(al.calculateQuantizedBeats(4.6) === 8, '4.6 beats (exceeded 4 beats) should quantize to 8 beats (2 bars)');
+  assert(al.calculateQuantizedBeats(2.0) === 8, '2 beats phrase should quantize to 8 beats (2 bars min)');
+  assert(al.calculateQuantizedBeats(4.0) === 8, '4 beats (1 bar) should quantize to 8 beats (2 bars)');
   assert(al.calculateQuantizedBeats(7.8) === 8, '7.8 beats phrase should quantize to 8 beats (2 bars)');
-  assert(al.calculateQuantizedBeats(8.5) === 12, '8.5 beats (exceeded 8 beats) should quantize to 12 beats (3 bars)');
-  assert(al.calculateQuantizedBeats(12.5) === 16, '12.5 beats (exceeded 12 beats) should quantize to 16 beats (4 bars)');
+  assert(al.calculateQuantizedBeats(10.0) === 16, '10 beats (exceeded 2 bars) should quantize to 16 beats (4 bars)');
+  assert(al.calculateQuantizedBeats(18.0) === 24, '18 beats (exceeded 4 bars) should quantize to 24 beats (6 bars)');
+  assert(al.calculateQuantizedBeats(26.0) === 32, '26 beats (exceeded 6 bars) should quantize to 32 beats (8 bars)');
+
+  // 7B. Test Live Phrase Metrics per hand
+  const metrics = al.getLivePhraseMetrics();
+  assert(metrics.drum !== undefined, 'Live metrics must include drum state');
+  assert(metrics.synth !== undefined, 'Live metrics must include synth state');
+  assert(metrics.master !== undefined, 'Live metrics must include master loop state');
+  assert(metrics.drum.bar >= 1, 'Drum bar index must start at >= 1');
+  assert(metrics.synth.bar >= 1, 'Synth bar index must start at >= 1');
 
   // 8. Test Downward Swipe on Right Hand (Open hand)
   const gdDown = new GestureDetector();

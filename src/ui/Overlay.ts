@@ -2,6 +2,7 @@ import {
   AppMode,
   FINGER_METAS,
   FingerId,
+  LivePhraseMetrics,
   LooperStatus,
   MappedHandsResult,
   SlotData,
@@ -48,6 +49,7 @@ export class Overlay {
   private thereminState: ThereminState | null = null;
   private streakPoints: SwipeStreakPoint[] = [];
   private looperStatus: LooperStatus | null = null;
+  private liveMetrics: LivePhraseMetrics | null = null;
 
   // Phrase capture live feedback
   private isDrumCapturing = false;
@@ -78,13 +80,17 @@ export class Overlay {
     this.looperStatus = status;
   }
 
+  setLivePhraseMetrics(metrics: LivePhraseMetrics | null): void {
+    this.liveMetrics = metrics;
+  }
+
   setCapturingState(drumCapturing: boolean, drumCount: number, synthCapturing: boolean): void {
     this.isDrumCapturing = drumCapturing;
     this.pendingDrumCount = drumCount;
     this.isSynthCapturing = synthCapturing;
   }
 
-  showToast(text: string, color = '#6366f1'): void {
+  showToast(text: string, color = '#39ff14'): void {
     this.toast = {
       text,
       color,
@@ -288,8 +294,8 @@ export class Overlay {
     }
 
     // 5. Looper HUD Overlay & Live Phrase Recording Badges
-    if (this.appMode === 'theremin' && this.looperStatus) {
-      this.drawLooperHud(ctx, vp, this.looperStatus, nowMs);
+    if (this.appMode === 'theremin') {
+      this.drawRetroDigitalHud(ctx, vp, nowMs);
     }
 
     // 6. Celebratory Toast Notification
@@ -303,6 +309,39 @@ export class Overlay {
         this.toast = null;
       }
     }
+  }
+
+  private drawDigitalText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    color = '#39ff14',
+    align: CanvasTextAlign = 'left'
+  ): void {
+    ctx.save();
+    ctx.font = `700 ${fontSize}px "Share Tech Mono", "VT323", "Courier New", Consolas, monospace`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+
+    // Crisp high-contrast outline to pop against any background without box shapes
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.strokeText(text, x, y);
+
+    // Phosphor glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 9;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+
+    // Inner brightness pass
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+
+    ctx.restore();
   }
 
   private drawThereminVisuals(
@@ -320,7 +359,7 @@ export class Overlay {
     ctx.save();
 
     // Vertical Pitch Guide Laser
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.22)';
+    ctx.strokeStyle = 'rgba(57, 255, 20, 0.35)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
@@ -330,7 +369,7 @@ export class Overlay {
     ctx.setLineDash([]);
 
     const tickSteps = 8;
-    ctx.fillStyle = 'rgba(165, 180, 252, 0.35)';
+    ctx.fillStyle = 'rgba(57, 255, 20, 0.45)';
     for (let i = 0; i <= tickSteps; i++) {
       const ty = vp.offsetY + (vp.drawHeight * (0.15 + (i / tickSteps) * 0.7));
       ctx.fillRect(x - 6, ty, 12, 1);
@@ -343,9 +382,9 @@ export class Overlay {
       const orbRadius = 24 + clench * 22;
       const grad = ctx.createRadialGradient(x, y, 4, x, y, orbRadius);
       grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-      grad.addColorStop(0.35, 'rgba(129, 140, 248, 0.85)');
-      grad.addColorStop(0.7, 'rgba(99, 102, 241, 0.45)');
-      grad.addColorStop(1, 'rgba(79, 70, 229, 0)');
+      grad.addColorStop(0.35, 'rgba(74, 222, 128, 0.85)');
+      grad.addColorStop(0.7, 'rgba(57, 255, 20, 0.45)');
+      grad.addColorStop(1, 'rgba(34, 197, 94, 0)');
 
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -353,66 +392,32 @@ export class Overlay {
       ctx.fill();
 
       const rotAngle = (nowMs * 0.004) % (Math.PI * 2);
-      ctx.strokeStyle = '#a5b4fc';
+      ctx.strokeStyle = '#39ff14';
       ctx.lineWidth = 3;
-      ctx.shadowColor = '#6366f1';
+      ctx.shadowColor = '#39ff14';
       ctx.shadowBlur = 18;
       ctx.beginPath();
       ctx.arc(x, y, orbRadius * 1.15, rotAngle, rotAngle + Math.PI * 1.4);
       ctx.stroke();
 
       const pulse = Math.sin(nowMs * 0.01) * 6;
-      ctx.strokeStyle = 'rgba(199, 210, 254, 0.6)';
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.7)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(x, y, orbRadius * 1.35 + pulse, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.shadowBlur = 0;
-      const noteLabel = `🎵 ${tState.noteName} • ${Math.round(tState.pitchHz)} Hz`;
-      ctx.font = '700 13px Inter, system-ui, sans-serif';
-      const textW = ctx.measureText(noteLabel).width;
-      const bw = textW + 20;
-      const bh = 26;
-      const bx = x - bw / 2;
-      const by = y - orbRadius - 40;
-
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-      ctx.strokeStyle = '#818cf8';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.roundRect(bx, by, bw, bh, 8);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#f8fafc';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(noteLabel, x, by + bh / 2);
+      const noteLabel = `[ NOTE: ${tState.noteName} • ${Math.round(tState.pitchHz)} HZ ]`;
+      this.drawDigitalText(ctx, noteLabel, x, y - orbRadius - 26, 14, '#39ff14', 'center');
     } else {
-      ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)';
+      ctx.strokeStyle = 'rgba(57, 255, 20, 0.4)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(x, y, 18, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.font = '600 11px Inter, system-ui, sans-serif';
-      const promptText = '✊ Yumruk Yap = Çal';
-      const textW = ctx.measureText(promptText).width;
-      const pw = textW + 14;
-      const ph = 20;
-      const px = x - pw / 2;
-      const py = y - 36;
-
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 6);
-      ctx.fill();
-
-      ctx.fillStyle = '#cbd5e1';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(promptText, x, py + ph / 2);
+      const promptText = '[ YUMRUK YAP = ÇAL ]';
+      this.drawDigitalText(ctx, promptText, x, y - 28, 12, '#39ff14', 'center');
     }
 
     ctx.restore();
@@ -435,83 +440,186 @@ export class Overlay {
     ctx.restore();
   }
 
-  private drawLooperHud(
+  private drawRetroDigitalHud(
     ctx: CanvasRenderingContext2D,
     vp: RenderViewport,
-    status: LooperStatus,
     nowMs: number
   ): void {
-    ctx.save();
-    const margin = 16;
-    const pillH = 34;
+    const pad2 = (n: number) => (n < 10 ? '0' + n : String(n));
+    const isBlink = Math.sin(nowMs * 0.008) > 0;
+    const neonGreen = '#39ff14';
 
-    // Pulse alpha for recording dots
-    const pulseAlpha = 0.5 + Math.sin(nowMs * 0.008) * 0.5;
+    const m = this.liveMetrics;
+    const drumStatus = m ? m.drum.status : this.isDrumCapturing ? 'recording' : this.looperStatus?.drumIsPlaying ? 'looping' : 'idle';
+    const synthStatus = m ? m.synth.status : this.isSynthCapturing ? 'recording' : (this.looperStatus?.synthLayersCount ?? 0) > 0 ? 'looping' : 'idle';
 
-    // Left Hand Drum Looper Badge
-    let drumText = '';
-    let drumBorderColor = '#64748b';
-    if (this.isDrumCapturing) {
-      drumText = `🔴 Kaydediliyor (${this.pendingDrumCount} Vuruş) • Swipe'la = Döngüle`;
-      drumBorderColor = `rgba(244, 63, 94, ${0.5 + pulseAlpha * 0.5})`;
-    } else if (status.drumIsPlaying) {
-      drumText = `🥁 Sol El Davul: ${status.drumEventsCount} Vuruş ▶ (Döngüde) • Swipe = Overdub`;
-      drumBorderColor = '#f43f5e';
+    const yLine1 = vp.offsetY + vp.drawHeight - 44;
+    const yLine2 = vp.offsetY + vp.drawHeight - 20;
+
+    // --- LEFT HAND (DRUMS) HUD ---
+    const xLeft = vp.offsetX + 20;
+    if (drumStatus === 'recording') {
+      const bar = m ? m.drum.bar : 1;
+      const beat = m ? m.drum.beat : 1;
+      const target = m ? m.drum.targetBars : 2;
+      const hits = m ? m.drum.hitsCount : this.pendingDrumCount;
+      const recDot = isBlink ? '●' : '○';
+      this.drawDigitalText(
+        ctx,
+        `[L-DRUM] ${recDot} REC :: BAR ${pad2(bar)} / BEAT ${pad2(beat)}  (HEDEF: ${pad2(target)} BAR)`,
+        xLeft,
+        yLine1,
+        15,
+        neonGreen,
+        'left'
+      );
+      this.drawDigitalText(
+        ctx,
+        `>> ${hits} VURUŞ | SOLA SWIPE = DÖNGÜLE <<`,
+        xLeft,
+        yLine2,
+        13,
+        neonGreen,
+        'left'
+      );
+    } else if (drumStatus === 'looping') {
+      const bar = m ? m.drum.bar : 1;
+      const total = m ? m.drum.totalBars : 2;
+      const beat = m ? m.drum.beat : 1;
+      const hits = m ? m.drum.hitsCount : this.looperStatus?.drumEventsCount ?? 0;
+      this.drawDigitalText(
+        ctx,
+        `[L-DRUM] PLAY ▶ :: BAR ${pad2(bar)}/${pad2(total)} • BEAT ${pad2(beat)}  [${hits} VURUŞ]`,
+        xLeft,
+        yLine1,
+        15,
+        neonGreen,
+        'left'
+      );
+      this.drawDigitalText(
+        ctx,
+        `>> VURARAK EKLE | SOLA SWIPE = OVERDUB <<`,
+        xLeft,
+        yLine2,
+        13,
+        neonGreen,
+        'left'
+      );
     } else {
-      drumText = `🥁 Sol El Davul (Çalmaya başla, swipe = döngüle)`;
-      drumBorderColor = '#475569';
+      this.drawDigitalText(
+        ctx,
+        `[L-DRUM] HAZIR :: 2-BAR GRID [BEKLEMEDE]`,
+        xLeft,
+        yLine1,
+        15,
+        neonGreen,
+        'left'
+      );
+      this.drawDigitalText(
+        ctx,
+        `>> SOL EL PARMAKLARLA VUR VE ÇAL <<`,
+        xLeft,
+        yLine2,
+        13,
+        neonGreen,
+        'left'
+      );
     }
 
-    ctx.font = '600 12px Inter, system-ui, sans-serif';
-    const dW = ctx.measureText(drumText).width + 24;
-    const dX = vp.offsetX + margin;
-    const dY = vp.offsetY + vp.drawHeight - pillH - margin;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-    ctx.strokeStyle = drumBorderColor;
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.roundRect(dX, dY, dW, pillH, 8);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#f8fafc';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(drumText, dX + 12, dY + pillH / 2);
-
-    // Right Hand Synth Looper Badge
-    let synthText = '';
-    let synthBorderColor = '#64748b';
-    if (this.isSynthCapturing) {
-      synthText = `🔴 Synth Kaydediliyor • Swipe'la = Döngüle`;
-      synthBorderColor = `rgba(129, 140, 248, ${0.5 + pulseAlpha * 0.5})`;
-    } else if (status.synthLayersCount > 0) {
-      synthText = `🎹 Synth: ${status.synthLayersCount} Katman ▶ (Döngüde) • Swipe = Overdub`;
-      synthBorderColor = '#818cf8';
+    // --- RIGHT HAND (SYNTH) HUD ---
+    const xRight = vp.offsetX + vp.drawWidth - 20;
+    if (synthStatus === 'recording') {
+      const bar = m ? m.synth.bar : 1;
+      const beat = m ? m.synth.beat : 1;
+      const target = m ? m.synth.targetBars : 2;
+      const recDot = isBlink ? '●' : '○';
+      this.drawDigitalText(
+        ctx,
+        `[R-SYNTH] ${recDot} REC :: BAR ${pad2(bar)} / BEAT ${pad2(beat)}  (HEDEF: ${pad2(target)} BAR)`,
+        xRight,
+        yLine1,
+        15,
+        neonGreen,
+        'right'
+      );
+      this.drawDigitalText(
+        ctx,
+        `>> SAĞA SWIPE = DÖNGÜLE | AŞAĞI = SES DEĞİŞTİR <<`,
+        xRight,
+        yLine2,
+        13,
+        neonGreen,
+        'right'
+      );
+    } else if (synthStatus === 'looping') {
+      const bar = m ? m.synth.bar : 1;
+      const total = m ? m.synth.totalBars : 2;
+      const beat = m ? m.synth.beat : 1;
+      const layers = m ? m.synth.layersCount : this.looperStatus?.synthLayersCount ?? 0;
+      this.drawDigitalText(
+        ctx,
+        `[R-SYNTH] PLAY ▶ :: BAR ${pad2(bar)}/${pad2(total)} • BEAT ${pad2(beat)}  [KATMAN ${pad2(layers)}]`,
+        xRight,
+        yLine1,
+        15,
+        neonGreen,
+        'right'
+      );
+      this.drawDigitalText(
+        ctx,
+        `>> YUMRUKLA ÇAL | SAĞA SWIPE = OVERDUB <<`,
+        xRight,
+        yLine2,
+        13,
+        neonGreen,
+        'right'
+      );
     } else {
-      synthText = `🎹 Sağ El Synth (Yumrukla çal, swipe = döngüle)`;
-      synthBorderColor = '#475569';
+      this.drawDigitalText(
+        ctx,
+        `[R-SYNTH] HAZIR :: 2-BAR GRID [BEKLEMEDE]`,
+        xRight,
+        yLine1,
+        15,
+        neonGreen,
+        'right'
+      );
+      this.drawDigitalText(
+        ctx,
+        `>> YUMRUK YAP VE ÇAL | AŞAĞI SWIPE = SES <<`,
+        xRight,
+        yLine2,
+        13,
+        neonGreen,
+        'right'
+      );
     }
 
-    const sW = ctx.measureText(synthText).width + 24;
-    const sX = vp.offsetX + vp.drawWidth - sW - margin;
-    const sY = dY;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-    ctx.strokeStyle = synthBorderColor;
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.roundRect(sX, sY, sW, pillH, 8);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#f8fafc';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(synthText, sX + 12, sY + pillH / 2);
-
-    ctx.restore();
+    // --- TOP CENTER (MASTER LOOP & BAR METRICS) ---
+    const xCenter = vp.offsetX + vp.drawWidth / 2;
+    const yTop = vp.offsetY + 24;
+    const bpm = m ? m.bpm : 120;
+    if (m && m.master.active) {
+      this.drawDigitalText(
+        ctx,
+        `::: MASTER ${bpm} BPM | DÖNGÜ: ${pad2(m.master.totalBars)} BAR (BAR ${pad2(m.master.bar)}/${pad2(m.master.totalBars)} • VURUŞ ${pad2(m.master.beat)}) :::`,
+        xCenter,
+        yTop,
+        14,
+        neonGreen,
+        'center'
+      );
+    } else {
+      this.drawDigitalText(
+        ctx,
+        `::: BEATCAM THEREMIN LOOPER • 2-BAR ADIM • ${bpm} BPM :::`,
+        xCenter,
+        yTop,
+        14,
+        neonGreen,
+        'center'
+      );
+    }
   }
 
   private drawToastBanner(
@@ -523,29 +631,11 @@ export class Overlay {
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    ctx.font = '700 14px Inter, system-ui, sans-serif';
-    const textW = ctx.measureText(toast.text).width;
-    const bw = textW + 36;
-    const bh = 38;
-    const bx = vp.offsetX + (vp.drawWidth - bw) / 2;
-    const by = vp.offsetY + 22;
+    const bannerText = `>>> ${toast.text.toUpperCase()} <<<`;
+    const bx = vp.offsetX + vp.drawWidth / 2;
+    const by = vp.offsetY + 52;
 
-    ctx.shadowColor = toast.color;
-    ctx.shadowBlur = 20;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-    ctx.strokeStyle = toast.color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, bw, bh, 10);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(toast.text, bx + bw / 2, by + bh / 2);
+    this.drawDigitalText(ctx, bannerText, bx, by, 16, '#39ff14', 'center');
 
     ctx.restore();
   }
