@@ -126,9 +126,9 @@ export class GestureDetector {
       Math.min(1, (v1x * v2x + v1y * v2y + v1z * v2z) / (mag1 * mag2))
     );
     // When straight: cosTheta ~ 1.0 -> curl = 0
-    // When 90 deg: cosTheta ~ 0.0 -> curl = 0.54
-    // When tightly curled into full fist: cosTheta ~ -0.85 -> curl = 1.0
-    const curl = (1 - cosTheta) / 1.85;
+    // When 90 deg: cosTheta ~ 0.0 -> curl = 0.66
+    // When tightly curled (>120 deg): cosTheta < -0.5 -> curl = 1.0
+    const curl = (1 - cosTheta) / 1.5;
     return Math.max(0, Math.min(1, curl));
   }
 
@@ -145,13 +145,13 @@ export class GestureDetector {
 
     const avgDist = (totalDist / tipIndices.length) / handScale;
 
-    const openDist = 1.35;
-    const closedDist = 0.48;
+    const openDist = 1.32;
+    const closedDist = 0.62;
 
     const distRatio = Math.max(0, Math.min(1, 1 - (avgDist - closedDist) / (openDist - closedDist)));
 
-    // Combine anatomical PIP curl (50%) with fingertip-to-palm distance (50%)
-    // so loosely bent fingers don't max out early — only a tight fist reaches 1.0
+    // Combine anatomical 4-finger curl (55%) with fingertip-to-palm distance (45%)
+    // Weight the 4 main fingers at 90% and thumb at 10% so a full fist reliably reaches 100%
     if (landmarks.length >= 21) {
       const c1 = this.computeJointCurl(landmarks[5], landmarks[6], landmarks[8]);
       const c2 = this.computeJointCurl(landmarks[9], landmarks[10], landmarks[12]);
@@ -161,8 +161,9 @@ export class GestureDetector {
 
       const validCurls = [c1, c2, c3, c4, c5].filter((c) => c > 0);
       if (validCurls.length >= 3) {
-        const avgCurl = (c1 + c2 + c3 + c4 + c5) / 5;
-        return Math.max(0, Math.min(1, 0.50 * avgCurl + 0.50 * distRatio));
+        const fourFingerCurl = (c1 + c2 + c3 + c4) * 0.25;
+        const weightedCurl = 0.90 * fourFingerCurl + 0.10 * c5;
+        return Math.max(0, Math.min(1, 0.55 * weightedCurl + 0.45 * distRatio));
       }
     }
 

@@ -604,22 +604,22 @@ function runTests() {
     const openRes = teVol.updateGesture(0.05, 0.5, 0.5);
     assert(openRes.volume === 0, 'Fully open hand (clench=0.05) must produce 0% volume');
 
-    const slightCupRes = teVol.updateGesture(0.35, 0.5, 0.5);
+    const slightCupRes = teVol.updateGesture(0.30, 0.5, 0.5);
     assert(
       slightCupRes.volume > 0.08 && slightCupRes.volume < 0.25,
-      `Slightly cupped hand (clench=0.35) must produce low volume (~13%, got ${Math.round(slightCupRes.volume * 100)}%)`
+      `Slightly cupped hand (clench=0.30) must produce low volume (~14%, got ${Math.round(slightCupRes.volume * 100)}%)`
     );
 
-    const halfFistRes = teVol.updateGesture(0.64, 0.5, 0.5);
+    const halfFistRes = teVol.updateGesture(0.55, 0.5, 0.5);
     assert(
       halfFistRes.volume > 0.40 && halfFistRes.volume < 0.60,
-      `Half-squeezed hand (clench=0.64) must produce mid volume (~50%, got ${Math.round(halfFistRes.volume * 100)}%)`
+      `Half-squeezed hand (clench=0.55) must produce mid volume (~50%, got ${Math.round(halfFistRes.volume * 100)}%)`
     );
 
-    const fullFistRes = teVol.updateGesture(0.96, 0.5, 0.5);
+    const fullFistRes = teVol.updateGesture(0.85, 0.5, 0.5);
     assert(
       Math.round(fullFistRes.volume * 100) === 100,
-      `Full fist (clench=0.96) must produce 100% volume (got ${Math.round(fullFistRes.volume * 100)}%)`
+      `Full fist (clench=0.85) must produce 100% volume (got ${Math.round(fullFistRes.volume * 100)}%)`
     );
   }
 
