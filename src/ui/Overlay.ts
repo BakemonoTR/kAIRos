@@ -503,6 +503,17 @@ export class Overlay {
       'center'
     );
 
+    // Small frequency (Hz) readout outside middle-right of the circle
+    this.drawDigitalText(
+      ctx,
+      `${Math.round(tState.pitchHz)} Hz`,
+      x + ringRadius + 7,
+      y,
+      9.5,
+      'rgba(226, 232, 240, 0.6)',
+      'left'
+    );
+
     ctx.restore();
   }
 
