@@ -253,28 +253,30 @@ export class FingerMapper {
 
         let rawBend: number;
         if (meta.isThumb) {
-          // Thumb tap in air piano / drums:
-          // 1) Full downward swing from the CMC basal joint (landmark 1 at the wrist)
-          // 2) Tip flexion relative to MCP joint (landmark 2)
-          // 3) Joint curl along the thumb ray
-          // 4) Inward travel toward palm center (wrist + middle MCP midpoint)
+          // Thumb tap in air piano / drums (works in both upright and piano poses):
+          // 1) Downward swing from CMC (landmark 1) and MCP (landmark 2)
+          // 2) Joint flexion along the thumb ray
+          // 3) Continuous (unclamped) inward adduction toward index & pinky knuckles
           const cmc = landmarks[1];
           const downCmc = (tip.y - cmc.y) / handScale;
           const downMcp = (tip.y - mcp.y) / handScale;
           const flex = computeJointFlexion(cmc, mcp, tip);
-          const palmCenterPt: Point3D = {
-            x: (wrist.x + middleMcp.x) * 0.5,
-            y: (wrist.y + middleMcp.y) * 0.5,
-            z: (wrist.z + middleMcp.z) * 0.5,
-          };
-          const inwardPalm = Math.max(0, 0.75 - dist2D(tip, palmCenterPt) / handScale);
-          rawBend = 0.80 * downCmc + 0.35 * downMcp + 0.40 * flex + 0.30 * inwardPalm;
+          const inwardIndex = -dist2D(tip, indexMcp) / handScale;
+          const inwardPinky = -dist2D(tip, pinkyMcp) / handScale;
+          rawBend =
+            0.75 * downCmc +
+            0.35 * downMcp +
+            0.45 * flex +
+            0.55 * inwardIndex +
+            0.30 * inwardPinky;
         } else {
-          // Piano strike = downward motion (+Y) + active joint flexion (curl)
-          // Higher flexion weight amplifies intentional strikes and suppresses passive dragging
+          // Finger strike: downward motion (+Y) + PIP flexion + MCP knuckle flexion + radial foreshortening
+          // Captures gentle early knuckle taps and camera-facing foreshortening without needing a full curl
           const downRatio = (tip.y - mcp.y) / handScale;
-          const flex = computeJointFlexion(mcp, pip, tip);
-          rawBend = 0.80 * downRatio + 0.45 * flex;
+          const pipFlex = computeJointFlexion(mcp, pip, tip);
+          const mcpFlex = computeJointFlexion(wrist, mcp, tip);
+          const radialPull = -dist2D(tip, wrist) / handScale;
+          rawBend = 0.95 * downRatio + 0.45 * pipFlex + 0.45 * mcpFlex + 0.35 * radialPull;
         }
 
         fingers.set(meta.id, {

@@ -576,8 +576,8 @@ async function bootstrap(): Promise<void> {
             }
             prevPalmL = { x: gestureState.palmCenter.x, y: gestureState.palmCenter.y };
 
-            // Only suppress when moving rapidly to the left, near the wall, or high gross speed
-            if (gestureState.palmCenter.x <= 0.20 || gestureState.velocityX < -0.45 || palmSpeed > 0.65) {
+            // Only suppress when touching the wall boundary or during rapid gross hand swipe
+            if (gestureState.palmCenter.x <= 0.13 || gestureState.velocityX < -0.80 || palmSpeed > 1.15) {
               isLeftFastMoving = true;
             }
           }

@@ -71,6 +71,7 @@ interface FingerRuntimeState {
   lastSeenMs: number;
   warmupFrames: number;
   pressPeak: number;
+  releaseTrough: number;
   // per-frame scratch
   delta: number;
   present: boolean;
@@ -84,17 +85,17 @@ interface Candidate {
 }
 
 // Tuning constants
-const COOLDOWN_MS = 60;
-const PEAK_WINDOW_MS = 60; // look-back window for velocity peak during strike
-const NEIGHBOR_WINDOW_MS = 180; // after a hit, adjacent fingers need a much stronger signal
-const NEIGHBOR_PENALTY = 2.4;
-const COMMON_MODE_K = 0.65; // how much of the other fingers' motion is subtracted
+const COOLDOWN_MS = 55;
+const PEAK_WINDOW_MS = 65; // look-back window for velocity peak during strike
+const NEIGHBOR_WINDOW_MS = 85; // brief post-hit window for adjacent sympathetic bounce
+const NEIGHBOR_PENALTY = 1.35;
+const COMMON_MODE_K = 0.30; // light common-mode rejection for whole-hand tilt without starving active finger
 const CHORD_RATIO = 0.75; // a 2nd finger in same frame must reach 75% of winner's peak velocity
-const RELEASE_FRACTION = 0.4; // release when bend drops 40% of downThreshold from its peak
+const RELEASE_FRACTION = 0.48; // release when bend drops 48% of downThreshold from its peak
 const LOST_RESET_MS = 350;
-const STILL_REQUIRED_MS = 250;
-const BASELINE_RATE = 0.03;
-const VEL_EMA = 0.40; // weight of newest position derivative
+const STILL_REQUIRED_MS = 160;
+const BASELINE_RATE = 0.05;
+const VEL_EMA = 0.65; // responsive velocity filter so quick 30fps taps keep their peak
 
 /**
  * Anatomical tendon coupling coefficients between fingers of the same hand.
@@ -131,7 +132,7 @@ export class TapDetector {
     for (const meta of FINGER_METAS) {
       this.states.set(meta.id, {
         phase: 'IDLE',
-        posFilter: new OneEuroFilter(1.0, 0.8, 5.0),
+        posFilter: new OneEuroFilter(1.8, 1.2, 6.0),
         pos: null,
         prevPos: null,
         prevRaw: null,
@@ -143,8 +144,9 @@ export class TapDetector {
         stillSinceMs: 0,
         lastTriggerMs: -1000,
         lastSeenMs: -1000,
-        warmupFrames: 6,
+        warmupFrames: 3,
         pressPeak: 0,
+        releaseTrough: 0,
         delta: 0,
         present: false,
       });
@@ -221,7 +223,7 @@ export class TapDetector {
           st.prevT = null;
           st.vel = 0;
           st.velHistory = [];
-          st.warmupFrames = 6;
+          st.warmupFrames = 3;
           st.restBend = null; // Clean baseline reset so re-entering hand adapts to current posture
           if (st.phase === 'SUPPRESSED' || st.phase === 'RELEASING') st.phase = 'IDLE';
         }
@@ -281,19 +283,19 @@ export class TapDetector {
         isolatedVel -= k * meanVel;
       }
 
-      // 2) Direct pairwise tendon coupling cancellation:
+      // 2) Asymmetric pairwise tendon coupling cancellation:
       // In human anatomy, Middle and Ring fingers are mechanically coupled via juncturae tendinum.
-      // When a strongly coupled neighbor moves, subtract its direct sympathetic pull from this finger
-      // so passive dragging never crosses the strike threshold.
+      // Only subtract a neighbor's motion when that neighbor is the active LEADER (moving more/faster
+      // than this finger). Never subtract passive neighbor drag from the leading finger itself!
       for (const otherMeta of FINGER_METAS) {
         if (otherMeta.hand !== meta.hand || otherMeta.id === fId) continue;
         const otherSt = this.states.get(otherMeta.id)!;
         if (!otherSt.present || otherSt.pos === null) continue;
 
         const coupling = getPairwiseCoupling(meta.code, otherMeta.code);
-        if (coupling > 0.15 && otherSt.delta > 0) {
+        if (coupling > 0.15 && otherSt.delta > 0 && otherSt.delta > st.delta * 0.90) {
           isolated -= coupling * Math.max(0, otherSt.delta);
-          if (otherSt.vel > 0) {
+          if (otherSt.vel > 0 && otherSt.vel > st.vel * 0.85) {
             isolatedVel -= coupling * Math.max(0, otherSt.vel);
           }
         }
@@ -306,7 +308,7 @@ export class TapDetector {
       }
       const peakVel = st.velHistory.reduce((m, h) => Math.max(m, h.v), -Infinity);
 
-      // Baseline adaptation: only adapt while finger is steady and idle
+      // Baseline adaptation: adapt while finger is steady
       if (Math.abs(st.vel) < 0.45) {
         if (st.stillSinceMs === 0) st.stillSinceMs = nowMs;
       } else {
@@ -316,16 +318,22 @@ export class TapDetector {
         (m) => m.hand === meta.hand && this.states.get(m.id)!.phase === 'PRESSED'
       );
       if (
-        st.phase === 'IDLE' &&
         !handBusy &&
         st.stillSinceMs !== 0 &&
         nowMs - st.stillSinceMs >= STILL_REQUIRED_MS
       ) {
-        // If finger is lifted higher than restBend, adapt up faster to prevent stuck threshold
-        const rate = st.pos < st.restBend ? 0.06 : BASELINE_RATE;
-        const target =
-          st.calibratedRest !== null ? 0.6 * st.calibratedRest + 0.4 * st.pos : st.pos;
-        st.restBend += (target - st.restBend) * rate;
+        if (st.phase === 'IDLE') {
+          // If finger is lifted higher than restBend, adapt up faster to prevent stuck threshold
+          const rate = st.pos < st.restBend ? 0.08 : BASELINE_RATE;
+          const target =
+            st.calibratedRest !== null ? 0.6 * st.calibratedRest + 0.4 * st.pos : st.pos;
+          st.restBend += (target - st.restBend) * rate;
+        } else if (st.phase === 'RELEASING' || st.phase === 'SUPPRESSED') {
+          // Unstick finger if held steady at a new mid-air resting posture
+          st.restBend = 0.4 * st.restBend + 0.6 * st.pos;
+          st.phase = 'IDLE';
+          st.velHistory = [];
+        }
       }
 
       if (st.warmupFrames > 0) {
@@ -345,26 +353,24 @@ export class TapDetector {
       }
 
       const sens = Math.max(0.35, settings.sensitivity);
-      let downThreshold = (meta.isThumb ? 0.14 : 0.17) / sens;
-      let velThreshold =
-        ((meta.isThumb ? 1.05 : 1.30) * (settings.velocityThreshold / 1.35)) / sens;
-      const upThreshold = downThreshold * 0.45;
+      const isPinky = meta.code.endsWith('pinky');
+      const baseDown = meta.isThumb ? 0.095 : isPinky ? 0.10 : 0.11;
+      const baseVel = meta.isThumb ? 0.72 : isPinky ? 0.78 : 0.85;
+      let downThreshold = baseDown / sens;
+      let velThreshold = (baseVel * (settings.velocityThreshold / 1.35)) / sens;
+      const upThreshold = downThreshold * 0.50;
 
-      // Neighbor penalty: an adjacent finger was recently hit OR is currently pressed/releasing
+      // Neighbor penalty: brief guard against delayed sympathetic bounce right after an adjacent hit
       if (settings.sympathySuppression) {
         const neighbors = this.neighborsOf(meta);
         const recentNeighborHit = neighbors.some((nId) => {
           const t = this.lastHitByFinger.get(nId);
           return t !== undefined && nowMs - t < NEIGHBOR_WINDOW_MS;
         });
-        const neighborActive = neighbors.some((nId) => {
-          const nState = this.states.get(nId);
-          return nState && (nState.phase === 'PRESSED' || nState.phase === 'RELEASING');
-        });
 
-        if (recentNeighborHit || neighborActive) {
+        if (recentNeighborHit) {
           const isMiddleRing = meta.code.endsWith('middle') || meta.code.endsWith('ring');
-          const penalty = isMiddleRing ? 2.8 : NEIGHBOR_PENALTY;
+          const penalty = isMiddleRing ? 1.45 : NEIGHBOR_PENALTY;
           downThreshold *= penalty;
           velThreshold *= penalty;
         }
@@ -372,13 +378,21 @@ export class TapDetector {
 
       switch (st.phase) {
         case 'IDLE': {
+          st.releaseTrough = Math.min(st.releaseTrough, isolated);
           const cooled = nowMs - st.lastTriggerMs >= COOLDOWN_MS;
-          // Crucial: finger must be actively moving downwards right now (not resting or lifting)
-          const activelyMoving = isolatedVel > 0.20 * velThreshold;
-          if (cooled && isolated >= downThreshold && peakVel >= velThreshold && activelyMoving) {
+          // Crucial: finger must be actively moving downwards right now and have traveled downward from its release trough
+          const activelyMoving = isolatedVel > 0.15 * velThreshold;
+          const strokeFromTrough = isolated - st.releaseTrough >= 0.65 * downThreshold;
+          if (
+            cooled &&
+            isolated >= downThreshold &&
+            strokeFromTrough &&
+            peakVel >= velThreshold &&
+            activelyMoving
+          ) {
             const velocity = Math.min(
               1.0,
-              Math.max(0.25, 0.32 + (peakVel - velThreshold) / (velThreshold * 2.4))
+              Math.max(0.25, 0.35 + (peakVel - velThreshold) / (velThreshold * 2.2))
             );
             candidates.push({ fingerId: fId, hand: meta.hand, peakVel, velocity });
             st.phase = 'PRESSED';
@@ -389,29 +403,21 @@ export class TapDetector {
         case 'PRESSED': {
           st.pressPeak = Math.max(st.pressPeak, isolated);
           const droppedFromPeak = isolated <= st.pressPeak - RELEASE_FRACTION * downThreshold;
-          const liftingFast = st.vel < -0.4 * velThreshold;
+          const liftingFast = st.vel < -0.40 * velThreshold;
           const reachedRest = isolated <= upThreshold;
 
           if (reachedRest || droppedFromPeak || liftingFast) {
             releases.push({ fingerId: fId, timestampMs: nowMs });
             st.velHistory = [];
-            // If already back at rest, return to IDLE;
-            // otherwise, enter RELEASING so it cannot re-trigger until fully released back up!
-            st.phase = reachedRest ? 'IDLE' : 'RELEASING';
-          }
-          break;
-        }
-        case 'RELEASING': {
-          // Locked in release: cannot re-trigger until finger rises back to rest position
-          if (isolated <= upThreshold) {
+            st.releaseTrough = isolated;
             st.phase = 'IDLE';
-            st.velHistory = [];
           }
           break;
         }
+        case 'RELEASING':
         case 'SUPPRESSED': {
-          // Locked until the finger comes back up to rest — prevents immediate re-trigger
-          if (isolated <= upThreshold) {
+          if (isolated <= upThreshold || st.vel <= 0) {
+            st.releaseTrough = isolated;
             st.phase = 'IDLE';
             st.velHistory = [];
           }

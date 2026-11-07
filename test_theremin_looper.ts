@@ -1,9 +1,10 @@
 import { GestureDetector } from './src/gesture/GestureDetector';
+import { TapDetector } from './src/gesture/TapDetector';
 import { ThereminEngine } from './src/audio/ThereminEngine';
 import { AirLooper } from './src/audio/AirLooper';
 import { Metronome } from './src/audio/Metronome';
 import { FingerMapper } from './src/tracking/FingerMapper';
-import { Point3D } from './src/types';
+import { AppSettings, FINGER_METAS, FingerId, Point3D, SlotData } from './src/types';
 
 function createMockHand(clench: 'open' | 'closed', x = 0.5, y = 0.5): Point3D[] {
   const lms: Point3D[] = [];
@@ -345,6 +346,218 @@ function runTests() {
   assert(mState.currentBeat >= 1 && mState.currentBeat <= 4, 'MetronomeState.currentBeat should be in [1..4]');
   metro.stop();
   assert(!metro.isEnabled(), 'Metronome should be stopped');
+
+  // 14. Comprehensive Finger Tap Diagnostic (Gentle / Partial Taps, Sympathy Suppression, Rolls & Re-Taps)
+  const defaultSettings: AppSettings = {
+    activeFingerCount: 10,
+    sensitivity: 1.0,
+    velocityThreshold: 1.35,
+    sympathySuppression: true,
+    masterVolume: 0.85,
+    midiMapMode: 'drum',
+    quantize: 'off',
+    bpm: 120,
+    multiTrackMidi: true,
+    includeOverlayInVideo: true,
+    recordResolution: '720p',
+    liveMidiEnabled: false,
+    selectedMidiOutputId: '',
+    appMode: 'theremin',
+    thereminPreset: 'cosmic',
+    thereminScale: 'pentatonic',
+    thereminReverb: 0.65,
+  };
+
+  const mockSlots: SlotData[] = FINGER_METAS.map((meta, idx) => ({
+    fingerId: meta.id,
+    enabled: true,
+    sourceType: 'synth',
+    sampleName: `Synth ${idx}`,
+    synthSeed: 1000 + idx,
+    synthType: meta.defaultSynthType,
+    midiNote: meta.defaultDrumNote,
+  }));
+
+  // Build an anatomical left hand in upright camera-facing pose (matching user's camera posture)
+  // bends: array of 5 bend amounts [L_thumb(0), L_index(1), L_middle(2), L_ring(3), L_pinky(4)] in [0..1]
+  // where 0.0 is extended rest, and ~0.28 is a gentle partial tap (without folding all the way down!)
+  function createAnatomicalLeftHand(bends: [number, number, number, number, number]): any {
+    // Note: FingerMapper mirrors x -> 1 - x, so raw landmark x = 0.72 maps to screen x = 0.28 (Left side)
+    const cx = 0.72;
+    const cy = 0.55;
+    const scale = 0.18;
+    const lms: Point3D[] = new Array(21).fill(null).map(() => ({ x: cx, y: cy, z: 0 }));
+
+    // Wrist (0) at bottom of palm
+    lms[0] = { x: cx, y: cy + scale * 0.85, z: 0 };
+
+    // Thumb (fingerId 0): CMC=1, MCP=2, IP=3, TIP=4
+    const bThumb = bends[0];
+    lms[1] = { x: cx - scale * 0.52, y: cy + scale * 0.48, z: 0 };
+    lms[2] = { x: cx - scale * 0.72, y: cy + scale * (0.20 + 0.10 * bThumb), z: 0 };
+    lms[3] = { x: cx - scale * (0.88 - 0.22 * bThumb), y: cy - scale * (0.04 - 0.22 * bThumb), z: 0 };
+    lms[4] = {
+      x: cx - scale * (1.02 - 0.45 * bThumb),
+      y: cy - scale * (0.22 - 0.38 * bThumb),
+      z: 0,
+    };
+
+    // Index (fingerId 1): MCP=5, PIP=6, DIP=7, TIP=8
+    const bIdx = bends[1];
+    lms[5] = { x: cx - scale * 0.40, y: cy - scale * 0.02, z: 0 };
+    lms[6] = { x: cx - scale * 0.42, y: cy - scale * (0.50 - 0.18 * bIdx), z: -0.02 * bIdx };
+    lms[7] = { x: cx - scale * 0.43, y: cy - scale * (0.80 - 0.45 * bIdx), z: -0.04 * bIdx };
+    lms[8] = { x: cx - scale * 0.44, y: cy - scale * (1.04 - 0.76 * bIdx), z: -0.06 * bIdx };
+
+    // Middle (fingerId 2): MCP=9, PIP=10, DIP=11, TIP=12
+    const bMid = bends[2];
+    lms[9] = { x: cx - scale * 0.12, y: cy - scale * 0.08, z: 0 };
+    lms[10] = { x: cx - scale * 0.12, y: cy - scale * (0.60 - 0.20 * bMid), z: -0.02 * bMid };
+    lms[11] = { x: cx - scale * 0.12, y: cy - scale * (0.92 - 0.50 * bMid), z: -0.04 * bMid };
+    lms[12] = { x: cx - scale * 0.12, y: cy - scale * (1.18 - 0.82 * bMid), z: -0.06 * bMid };
+
+    // Ring (fingerId 3): MCP=13, PIP=14, DIP=15, TIP=16
+    const bRing = bends[3];
+    lms[13] = { x: cx + scale * 0.16, y: cy - scale * 0.06, z: 0 };
+    lms[14] = { x: cx + scale * 0.17, y: cy - scale * (0.55 - 0.20 * bRing), z: -0.02 * bRing };
+    lms[15] = { x: cx + scale * 0.17, y: cy - scale * (0.86 - 0.48 * bRing), z: -0.04 * bRing };
+    lms[16] = { x: cx + scale * 0.17, y: cy - scale * (1.10 - 0.80 * bRing), z: -0.06 * bRing };
+
+    // Pinky (fingerId 4): MCP=17, PIP=18, DIP=19, TIP=20
+    const bPinky = bends[4];
+    lms[17] = { x: cx + scale * 0.45, y: cy, z: 0 };
+    lms[18] = { x: cx + scale * 0.48, y: cy - scale * (0.42 - 0.18 * bPinky), z: -0.02 * bPinky };
+    lms[19] = { x: cx + scale * 0.49, y: cy - scale * (0.68 - 0.42 * bPinky), z: -0.04 * bPinky };
+    lms[20] = { x: cx + scale * 0.50, y: cy - scale * (0.88 - 0.72 * bPinky), z: -0.06 * bPinky };
+
+    return {
+      landmarks: [lms],
+      handednesses: [[{ categoryName: 'Right', score: 0.95 }]],
+    };
+  }
+
+  // 14A. Test that every single finger (0..4: Thumb, Index, Middle, Ring, Pinky) triggers on a GENTLE 28% tap
+  // even when realistic anatomical sympathetic drag (50% on neighbors) is present!
+  const fingerNames = ['L Thumb (0)', 'L Index (1)', 'L Middle (2)', 'L Ring (3)', 'L Pinky (4)'];
+  for (let targetFinger = 0; targetFinger < 5; targetFinger++) {
+    const mapper = new FingerMapper();
+    const detector = new TapDetector();
+    let t = 1000;
+
+    // Warmup at rest (6 frames at 30fps = 33ms step)
+    for (let f = 0; f < 6; f++) {
+      t += 33;
+      const mapped = mapper.map(createAnatomicalLeftHand([0, 0, 0, 0, 0]), t, 'theremin');
+      detector.process(mapped, mockSlots, defaultSettings, t);
+    }
+
+    // Perform a gentle 28% tap over 2 frames (66ms), with realistic sympathetic drag on adjacent fingers!
+    const tapProfile = [0.14, 0.28];
+    const triggeredFingers: FingerId[] = [];
+    for (const amt of tapProfile) {
+      t += 33;
+      const bends: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+      bends[targetFinger] = amt;
+      // Add realistic anatomical tendon pull on neighbors
+      if (targetFinger === 3) {
+        // Ring (3) pulls Middle (2) at 55% and Pinky (4) at 40%
+        bends[2] = amt * 0.55;
+        bends[4] = amt * 0.40;
+      } else if (targetFinger === 2) {
+        // Middle (2) pulls Ring (3) at 55% and Index (1) at 35%
+        bends[3] = amt * 0.55;
+        bends[1] = amt * 0.35;
+      } else if (targetFinger === 4) {
+        // Pinky (4) pulls Ring (3) at 40%
+        bends[3] = amt * 0.40;
+      } else if (targetFinger === 1) {
+        // Index (1) pulls Middle (2) at 30%
+        bends[2] = amt * 0.30;
+      }
+      const mapped = mapper.map(createAnatomicalLeftHand(bends), t, 'theremin');
+      const { taps } = detector.process(mapped, mockSlots, defaultSettings, t);
+      for (const tap of taps) triggeredFingers.push(tap.fingerId);
+    }
+
+    assert(
+      triggeredFingers.includes(targetFinger as FingerId),
+      `${fingerNames[targetFinger]} must trigger on a gentle 28% tap without full finger curl`
+    );
+    assert(
+      triggeredFingers.length === 1 && triggeredFingers[0] === targetFinger,
+      `${fingerNames[targetFinger]} gentle tap must NOT false-trigger sympathetic neighbors (got [${triggeredFingers.join(', ')}])`
+    );
+  }
+
+  // 14B. Test fast sequential adjacent finger roll (Index(1) -> Middle(2) -> Ring(3), 100ms apart)
+  {
+    const mapper = new FingerMapper();
+    const detector = new TapDetector();
+    let t = 5000;
+    for (let f = 0; f < 6; f++) {
+      t += 33;
+      detector.process(mapper.map(createAnatomicalLeftHand([0, 0, 0, 0, 0]), t, 'theremin'), mockSlots, defaultSettings, t);
+    }
+
+    const rollOrder: FingerId[] = [1, 2, 3]; // Index(1), Middle(2), Ring(3)
+    const rollHits: FingerId[] = [];
+
+    for (const fId of rollOrder) {
+      // 2 frames down (66ms)
+      for (const amt of [0.15, 0.30]) {
+        t += 33;
+        const bends: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+        bends[fId] = amt;
+        if (fId === 2) bends[3] = amt * 0.45;
+        if (fId === 3) bends[2] = amt * 0.45;
+        const { taps } = detector.process(mapper.map(createAnatomicalLeftHand(bends), t, 'theremin'), mockSlots, defaultSettings, t);
+        for (const tap of taps) rollHits.push(tap.fingerId);
+      }
+      // 1 frame release (33ms) before next finger starts!
+      t += 33;
+      detector.process(mapper.map(createAnatomicalLeftHand([0, 0, 0, 0, 0]), t, 'theremin'), mockSlots, defaultSettings, t);
+    }
+
+    assert(
+      rollHits.length === 3 && rollHits[0] === 1 && rollHits[1] === 2 && rollHits[2] === 3,
+      `Fast sequential roll (Index->Middle->Ring) must register all 3 hits cleanly (got [${rollHits.join(', ')}])`
+    );
+  }
+
+  // 14C. Test rapid repeated taps on the same finger with only partial mid-air lift (not lifting all the way back to 0)
+  {
+    const mapper = new FingerMapper();
+    const detector = new TapDetector();
+    let t = 8000;
+    for (let f = 0; f < 6; f++) {
+      t += 33;
+      detector.process(mapper.map(createAnatomicalLeftHand([0, 0, 0, 0, 0]), t, 'theremin'), mockSlots, defaultSettings, t);
+    }
+
+    let indexHits = 0;
+    // Tap 1 on Index (1): go to 0.30
+    for (const amt of [0.15, 0.30]) {
+      t += 33;
+      const { taps } = detector.process(mapper.map(createAnatomicalLeftHand([0, amt, 0, 0, 0]), t, 'theremin'), mockSlots, defaultSettings, t);
+      indexHits += taps.filter((x) => x.fingerId === 1).length;
+    }
+    // Partial lift: only lift back up to 0.10 (NOT 0.0!) for 2 frames
+    for (const amt of [0.12, 0.10]) {
+      t += 33;
+      detector.process(mapper.map(createAnatomicalLeftHand([0, amt, 0, 0, 0]), t, 'theremin'), mockSlots, defaultSettings, t);
+    }
+    // Tap 2 from mid-air (0.10 -> 0.32)
+    for (const amt of [0.22, 0.32]) {
+      t += 33;
+      const { taps } = detector.process(mapper.map(createAnatomicalLeftHand([0, amt, 0, 0, 0]), t, 'theremin'), mockSlots, defaultSettings, t);
+      indexHits += taps.filter((x) => x.fingerId === 1).length;
+    }
+
+    assert(
+      indexHits === 2,
+      `Rapid double-tap with partial mid-air release must register both hits (got ${indexHits})`
+    );
+  }
 
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }
