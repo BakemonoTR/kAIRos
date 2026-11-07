@@ -144,7 +144,7 @@ async function bootstrap(): Promise<void> {
   for (let n = 1; n <= 10; n++) {
     const opt = document.createElement('option');
     opt.value = String(n);
-    opt.textContent = `${n} Parmak`;
+    opt.textContent = `${n} CH`;
     selActiveFingers.appendChild(opt);
   }
 
@@ -188,8 +188,8 @@ async function bootstrap(): Promise<void> {
 
   function refreshLooperUi(): void {
     const status = airLooper.getStatus();
-    lblSynthLayers.textContent = `${status.synthLayersCount} Katman`;
-    lblDrumHits.textContent = `${status.drumEventsCount} Vuruş`;
+    lblSynthLayers.textContent = `${status.synthLayersCount} LAYERS`;
+    lblDrumHits.textContent = `${status.drumEventsCount} HITS`;
     store.emit('looperUpdate', status);
   }
 
@@ -207,8 +207,8 @@ async function bootstrap(): Promise<void> {
     store.emit(
       'statusMessage',
       mode === 'theremin'
-        ? '🚀 Theremin & Looper Modu Aktif (Sağ el: Theremin, Sol el: Davul)'
-        : '🎹 10 Parmak Modu Aktif'
+        ? 'Theremin & Looper Mode Active'
+        : '10-Finger Mode Active'
     );
   }
 
@@ -481,10 +481,10 @@ async function bootstrap(): Promise<void> {
 
       startOverlay.classList.add('hidden');
       btnToggleCam.disabled = false;
-      btnToggleCam.textContent = 'Durdur';
+      btnToggleCam.textContent = 'STOP';
       btnCalibrate.disabled = false;
       btnRecord.disabled = false;
-      store.emit('statusMessage', 'Canlı takip aktif');
+      store.emit('statusMessage', 'Live tracking active');
 
       lastFrameMs = performance.now();
       let leftLockoutUntilMs = 0;
@@ -756,14 +756,14 @@ async function bootstrap(): Promise<void> {
     theremin.silence();
     overlay.setThereminState(null);
     camera.stop();
-    btnToggleCam.textContent = 'BaÅŸlat';
+    btnToggleCam.textContent = 'START';
     btnCalibrate.disabled = true;
     btnRecord.disabled = true;
     startOverlay.classList.remove('hidden');
     btnStartHero.disabled = false;
     hudFps.textContent = 'FPS: --';
     hudHands.textContent = 'ELLER: 0';
-    store.emit('statusMessage', 'Durduruldu');
+    store.emit('statusMessage', 'Stopped');
   }
 
   btnStartHero.addEventListener('click', () => {
@@ -783,8 +783,8 @@ async function bootstrap(): Promise<void> {
     if (!camera.isRunning() || tapDetector.isCalibrating()) return;
 
     btnCalibrate.disabled = true;
-    countdownTitle.textContent = 'Dinlenme Kalibrasyonu';
-    countdownDesc.textContent = 'Ellerini Ã§alma pozisyonunda rahat ve sabit tut...';
+    countdownTitle.textContent = 'CALIBRATING';
+    countdownDesc.textContent = 'Hold hands steady in neutral position...';
     countdownNumber.textContent = '3';
     countdownBanner.classList.remove('hidden');
     tapDetector.beginCalibration();
@@ -802,8 +802,8 @@ async function bootstrap(): Promise<void> {
         store.emit(
           'statusMessage',
           count > 0
-            ? `Kalibrasyon tamamlandÄ± (${count} parmak kaydedildi)`
-            : 'Kalibrasyon baÅŸarÄ±sÄ±z: Eller kamerada gÃ¶rÃ¼nmedi'
+            ? `Calibration complete (${count} fingers)`
+            : 'Calibration failed: No hands detected'
         );
       }
     }, 1000);
@@ -820,7 +820,7 @@ async function bootstrap(): Promise<void> {
     videoRecorder.start(audio.getAudioStream(), settings.recordResolution);
 
     btnRecord.classList.add('recording');
-    recLabel.textContent = 'Durdur';
+    recLabel.textContent = 'STOP';
     recTimer.classList.remove('hidden');
     recStartWallMs = performance.now();
     recTimer.textContent = '00:00.0';
@@ -830,7 +830,7 @@ async function bootstrap(): Promise<void> {
       recTimer.textContent = formatTimer(elapsed);
     }, 100);
 
-    store.emit('statusMessage', 'ğŸ”´ Video + MIDI kaydediliyor...');
+    store.emit('statusMessage', 'Recording Video + MIDI...');
   }
 
   async function stopRecordingAndShowModal(): Promise<void> {
@@ -841,7 +841,7 @@ async function bootstrap(): Promise<void> {
     }
 
     btnRecord.classList.remove('recording');
-    recLabel.textContent = 'Kaydet';
+    recLabel.textContent = 'REC';
     recTimer.classList.add('hidden');
 
     const midiEvents = midiRecorder.stop(audio.getCurrentTime());
@@ -853,10 +853,10 @@ async function bootstrap(): Promise<void> {
     lastRecordedVideo = videoRes;
 
     previewVideo.src = videoRes.url;
-    modalInfoDuration.textContent = `SÃ¼re: ${videoRes.durationSec.toFixed(1)} sn`;
-    modalInfoNotes.textContent = `Kaydedilen Nota: ${midiEvents.length}`;
+    modalInfoDuration.textContent = `Duration: ${videoRes.durationSec.toFixed(1)}s`;
+    modalInfoNotes.textContent = `Notes: ${midiEvents.length}`;
     recordModal.classList.remove('hidden');
-    store.emit('statusMessage', `KayÄ±t tamamlandÄ± (${midiEvents.length} nota)`);
+    store.emit('statusMessage', `Recording complete (${midiEvents.length} notes)`);
   }
 
   btnRecord.addEventListener('click', () => {
@@ -968,7 +968,7 @@ async function bootstrap(): Promise<void> {
     if (ports.length === 0) {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = 'MIDI Port BulunamadÄ±';
+      opt.textContent = 'No MIDI Port';
       selMidiOut.appendChild(opt);
       selMidiOut.disabled = true;
       return;

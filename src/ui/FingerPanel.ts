@@ -6,6 +6,19 @@ import { SynthGenerator } from '../audio/SynthGenerator';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+const EN_FINGER_LABELS: Record<FingerId, string> = {
+  0: 'L Thumb',
+  1: 'L Index',
+  2: 'L Middle',
+  3: 'L Ring',
+  4: 'L Pinky',
+  5: 'R Thumb',
+  6: 'R Index',
+  7: 'R Middle',
+  8: 'R Ring',
+  9: 'R Pinky',
+};
+
 export function midiNoteToName(midi: number): string {
   const clamped = Math.max(0, Math.min(127, Math.round(midi)));
   const octave = Math.floor(clamped / 12) - 1;
@@ -94,10 +107,10 @@ export class FingerPanel {
       });
       this.audio.trigger(fingerId, 0.85);
       this.flashSlot(fingerId);
-      this.store.emit('statusMessage', `${FINGER_METAS[fingerId].label}: "${file.name}" yüklendi`);
+      this.store.emit('statusMessage', `${EN_FINGER_LABELS[fingerId]}: Loaded "${file.name}"`);
     } catch (err) {
       console.error(err);
-      this.store.emit('statusMessage', 'Ses dosyası çözümlenemedi!');
+      this.store.emit('statusMessage', 'Failed to decode audio file');
     }
   }
 
@@ -130,7 +143,7 @@ export class FingerPanel {
       }
     }
     this.store.replaceSlots([...slots]);
-    this.store.emit('statusMessage', 'Tüm synth sesleri yeniden üretildi 🎲');
+    this.store.emit('statusMessage', 'Randomized all synth slots');
   }
 
   async clearCustomToSynth(fingerId: FingerId): Promise<void> {
@@ -165,6 +178,7 @@ export class FingerPanel {
 
   private createRow(slot: SlotData): HTMLElement {
     const meta = FINGER_METAS[slot.fingerId];
+    const enLabel = EN_FINGER_LABELS[slot.fingerId] || meta.label;
     const row = document.createElement('div');
     row.className = `slot-row${slot.enabled ? '' : ' disabled'}`;
     row.style.setProperty('--slot-color', meta.color);
@@ -186,17 +200,17 @@ export class FingerPanel {
       }
     });
 
-    // 1. Colored dot button -> click to upload audio!
+    // 1. Channel index button -> click to load sample
     const dotBtn = document.createElement('button');
     dotBtn.className = 'slot-dot-btn';
-    dotBtn.title = `${meta.label} — Ses dosyası yüklemek için tıkla (veya sürükle-bırak)`;
-    dotBtn.textContent = String(slot.fingerId + 1);
+    dotBtn.title = `${enLabel} — Click or drop audio file to load sample`;
+    dotBtn.textContent = String(slot.fingerId + 1).padStart(2, '0');
     dotBtn.addEventListener('click', () => this.openFilePicker(slot.fingerId));
 
-    // 2. Finger info (clicking also opens file picker for convenience)
+    // 2. Finger info
     const info = document.createElement('div');
     info.className = 'slot-info';
-    info.title = 'One-shot ses yüklemek için tıkla';
+    info.title = 'Click to load one-shot sample';
     info.addEventListener('click', () => this.openFilePicker(slot.fingerId));
 
     const topLine = document.createElement('div');
@@ -204,7 +218,7 @@ export class FingerPanel {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'slot-name';
-    nameSpan.textContent = meta.label;
+    nameSpan.textContent = enLabel;
 
     const keyBadge = document.createElement('span');
     keyBadge.className = 'slot-key';
@@ -218,7 +232,7 @@ export class FingerPanel {
 
     info.append(topLine, sampleSpan);
 
-    // 3. Actions: MIDI Note + Upload + Dice + Play + Clear
+    // 3. Actions: MIDI Note + LOAD + SYNTH + TRIG + CLR
     const actions = document.createElement('div');
     actions.className = 'slot-actions';
 
@@ -228,7 +242,7 @@ export class FingerPanel {
     midiInput.max = '127';
     midiInput.value = String(slot.midiNote);
     midiInput.className = 'midi-note-input';
-    midiInput.title = `MIDI Nota: ${slot.midiNote} (${midiNoteToName(slot.midiNote)})`;
+    midiInput.title = `MIDI Note: ${slot.midiNote} (${midiNoteToName(slot.midiNote)})`;
     midiInput.addEventListener('change', () => {
       const val = Math.max(0, Math.min(127, Number(midiInput.value) || 60));
       if (this.store.getSettings().midiMapMode !== 'custom') {
@@ -239,22 +253,22 @@ export class FingerPanel {
 
     const uploadBtn = document.createElement('button');
     uploadBtn.className = 'icon-btn';
-    uploadBtn.title = 'Ses dosyası yükle';
-    uploadBtn.textContent = '📁';
+    uploadBtn.title = 'Load audio file';
+    uploadBtn.textContent = 'LOAD';
     uploadBtn.addEventListener('click', () => this.openFilePicker(slot.fingerId));
 
     const diceBtn = document.createElement('button');
     diceBtn.className = 'icon-btn';
-    diceBtn.title = 'Rastgele synth sesi üret';
-    diceBtn.textContent = '🎲';
+    diceBtn.title = 'Generate random synth voice';
+    diceBtn.textContent = 'SYNTH';
     diceBtn.addEventListener('click', () => {
       void this.randomizeSynth(slot.fingerId);
     });
 
     const testBtn = document.createElement('button');
     testBtn.className = 'icon-btn';
-    testBtn.title = `Test çal (${meta.keyShortcut})`;
-    testBtn.textContent = '▶';
+    testBtn.title = `Trigger (${meta.keyShortcut})`;
+    testBtn.textContent = 'TRIG';
     testBtn.addEventListener('click', () => {
       this.store.emit('noteOn', {
         fingerId: slot.fingerId,
@@ -274,8 +288,8 @@ export class FingerPanel {
     if (slot.sourceType === 'custom') {
       const clearBtn = document.createElement('button');
       clearBtn.className = 'icon-btn';
-      clearBtn.title = 'Yüklenen sesi kaldır (Synth sesine dön)';
-      clearBtn.textContent = '✕';
+      clearBtn.title = 'Clear custom sample and revert to synth';
+      clearBtn.textContent = 'CLR';
       clearBtn.addEventListener('click', () => {
         void this.clearCustomToSynth(slot.fingerId);
       });

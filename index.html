@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BeatCam — Havada Parmak Piyano & Davul Stüdyosu</title>
+    <title>BeatCam — Air Instrument &amp; Looper</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet" />
@@ -11,85 +11,84 @@
   </head>
   <body>
     <div id="app">
-      <!-- Üst Başlık ve Kayıt Çubuğu -->
+      <!-- Top Bar -->
       <header class="topbar">
         <div class="brand">
           <span class="brand-dot"></span>
-          <h1>BeatCam</h1>
-          <span class="brand-sub">10 Parmak &amp; Theremin</span>
+          <h1>BEATCAM</h1>
+          <span class="brand-sub">AIR STUDIO</span>
         </div>
 
         <div class="mode-switch-group">
-          <button id="btn-mode-fingers" class="btn-mode active" title="10 Parmak Hava Piyanosu &amp; Davul">
-            🎹 Parmak Modu
+          <button id="btn-mode-fingers" class="btn-mode active" title="10-Finger Drum &amp; Sample Mode">
+            FINGER MODE
           </button>
-          <button id="btn-mode-theremin" class="btn-mode" title="Theremin Synth &amp; Hava Looper Modu">
-            🚀 Theremin &amp; Looper
+          <button id="btn-mode-theremin" class="btn-mode" title="Theremin Synth &amp; Air Looper Mode">
+            THEREMIN &amp; LOOPER
           </button>
         </div>
 
         <div class="record-controls">
-          <button id="btn-record" class="btn btn-record" disabled title="Video ve MIDI Kaydını Başlat">
+          <button id="btn-record" class="btn btn-record" disabled title="Record Video &amp; MIDI">
             <span class="rec-icon">●</span>
-            <span id="rec-label">Kaydet</span>
+            <span id="rec-label">REC</span>
           </button>
           <span id="rec-timer" class="rec-timer hidden">00:00.0</span>
 
-          <label class="inline-toggle" title="Parmak noktalarını ve vuruş efektlerini videoya dahil et">
+          <label class="inline-toggle" title="Include HUD overlay in recorded video">
             <input type="checkbox" id="chk-video-overlay" checked />
-            <span>Overlay Dahil</span>
+            <span>Overlay</span>
           </label>
 
-          <select id="sel-resolution" class="select-sm" title="Video Kayıt Çözünürlüğü">
-            <option value="720p">720p HD</option>
-            <option value="480p">480p SD</option>
+          <select id="sel-resolution" class="select-sm" title="Video Resolution">
+            <option value="720p">720p</option>
+            <option value="480p">480p</option>
           </select>
         </div>
 
         <div class="preset-controls">
-          <button id="btn-export-preset" class="btn btn-ghost btn-sm" title="Sesleri ve ayarları JSON paketi olarak dışa aktar">
-            ⬇ Preset İndir
+          <button id="btn-export-preset" class="btn btn-ghost btn-sm" title="Export preset as JSON">
+            EXPORT
           </button>
-          <button id="btn-import-preset" class="btn btn-ghost btn-sm" title="Preset JSON dosyası yükle">
-            ⬆ Preset Yükle
+          <button id="btn-import-preset" class="btn btn-ghost btn-sm" title="Import preset JSON">
+            IMPORT
           </button>
           <input type="file" id="input-import-preset" accept=".json,application/json" class="hidden" />
         </div>
       </header>
 
-      <!-- Ana Gövde: Sol Kamera + Sağ 10 Parmak Paneli -->
+      <!-- Main Workspace -->
       <main class="workspace">
         <section class="stage-panel">
           <div class="video-stage" id="video-stage">
             <video id="webcam" playsinline muted></video>
             <canvas id="overlay-canvas"></canvas>
 
-            <!-- Başlangıç Ekranı -->
+            <!-- Start Screen -->
             <div id="start-overlay" class="stage-overlay">
               <div class="overlay-card">
-                <h2>Kameranı Aç &amp; Havada Çalmaya Başla</h2>
+                <h2>CAMERA &amp; AUDIO STANDBY</h2>
                 <p>
-                  Ellerini kameraya göster, parmaklarını havada piyano çalar gibi aşağı vur.
-                  Sağ paneldeki noktalara tıklayarak her parmağa kendi one-shot sesini yükle veya
-                  <strong>🎲 Synth</strong> ile üret!
+                  Place your hands in frame to play drums and synth in mid-air.
+                  Load custom samples or generate synth voices from the right panel.
                 </p>
                 <p class="hint-text">
-                  İpucu: İyi önden aydınlatma kullan. Test için klavyede <code>A S D F G H J K L ;</code> tuşlarına basabilirsin.
+                  Keyboard trigger keys: <code>A S D F G H J K L ;</code>
                 </p>
                 <button id="btn-start-hero" class="btn btn-primary btn-lg">
-                  🎥 Kamerayı ve Ses Motorunu Başlat
+                  START ENGINE
                 </button>
               </div>
             </div>
 
-            <!-- Kalibrasyon / Geri Sayım Katmanı -->
+            <!-- Calibration Overlay -->
             <div id="countdown-banner" class="countdown-banner hidden">
-              <div id="countdown-title" class="countdown-title">Kalibrasyon</div>
+              <div id="countdown-title" class="countdown-title">CALIBRATING</div>
               <div id="countdown-number" class="countdown-number">3</div>
-              <div id="countdown-desc" class="countdown-desc">Ellerini kamerada rahat ve açık tut...</div>
+              <div id="countdown-desc" class="countdown-desc">Hold hands steady in neutral position...</div>
             </div>
 
-            <!-- FPS & Eller Göstergesi (Sol Dış Siyah Alan) -->
+            <!-- Camera HUD (Untouched) -->
             <div class="stage-hud">
               <span id="hud-fps" class="hud-mono-text">FPS: --</span>
               <span id="hud-hands" class="hud-mono-text">ELLER: 0</span>
@@ -97,40 +96,40 @@
           </div>
         </section>
 
-        <!-- Sağ Panel: 10 Parmak Slotları veya Theremin & Looper Paneli -->
+        <!-- Right Sidebar -->
         <aside class="finger-sidebar">
-          <!-- Mod 1: 10 Parmak Paneli -->
+          <!-- Mode 1: 10-Finger Channels -->
           <div id="panel-fingers-mode" class="fingers-container">
             <div class="sidebar-header">
               <div class="sidebar-title-row">
-                <h2>Parmak Slotları</h2>
+                <h2>CHANNELS</h2>
                 <div class="active-count-box">
-                  <label for="sel-active-fingers">Aktif:</label>
+                  <label for="sel-active-fingers">ACTIVE</label>
                   <select id="sel-active-fingers" class="select-sm"></select>
                 </div>
               </div>
 
               <div class="midi-toolbar">
                 <label>
-                  MIDI Modu:
+                  <span>MIDI</span>
                   <select id="sel-midi-mode" class="select-sm">
-                    <option value="drum">GM Davul (Kn.10)</option>
-                    <option value="melodic">Melodik (Pentatonik)</option>
-                    <option value="custom">Özel</option>
+                    <option value="drum">GM Drum (Ch.10)</option>
+                    <option value="melodic">Melodic</option>
+                    <option value="custom">Custom</option>
                   </select>
                 </label>
 
                 <label>
-                  Quantize:
+                  <span>QUANTIZE</span>
                   <select id="sel-quantize" class="select-sm">
-                    <option value="off">Kapalı</option>
+                    <option value="off">Off</option>
                     <option value="1/8">1/8</option>
                     <option value="1/16">1/16</option>
                   </select>
                 </label>
 
-                <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Tüm synth slotlarını yeniden üret">
-                  🎲 Tümünü Üret
+                <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Randomize all synth slots">
+                  RANDOMIZE ALL
                 </button>
               </div>
             </div>
@@ -138,168 +137,183 @@
             <div id="finger-slots-list" class="slots-list"></div>
           </div>
 
-          <!-- Mod 2: Theremin & Air Looper Paneli -->
+          <!-- Mode 2: Theremin & Looper -->
           <div id="panel-theremin-mode" class="theremin-sidebar-panel hidden">
             <div class="theremin-header">
-              <div class="theremin-title-badge">🚀 Theremin &amp; Air Looper</div>
+              <div class="theremin-title-badge">THEREMIN &amp; LOOPER</div>
               <p class="theremin-desc">
-                Sağ elinle havada Theremin synth çal, sol elinle davul ritmi tut. Swipelayarak döngüye al ve katmanla!
+                Right hand controls synth pitch and filter. Left hand triggers drums.
               </p>
             </div>
 
             <div class="theremin-section">
-              <div class="section-title">🎹 Synth Ayarları (Sağ El)</div>
-              
+              <div class="section-title">SYNTHESIZER (R-HAND)</div>
+
               <label class="theremin-field">
-                <span>Synth Tonu:</span>
+                <span>PRESET</span>
                 <select id="sel-theremin-preset" class="select-sm">
-                  <option value="cosmic">🌌 Kozmik (Klasik Theremin)</option>
-                  <option value="cyber">⚡ Cyber Lead (Rezonans)</option>
-                  <option value="dreampad">☁️ Rüya Padi (Lush Ambient)</option>
-                  <option value="chiptune">👾 Retro 8-Bit (Kare Dalga)</option>
-                  <option value="cello">🎻 Çello-Vox (Pürüzsüz)</option>
+                  <option value="cosmic">Cosmic Sine</option>
+                  <option value="cyber">Cyber Lead</option>
+                  <option value="dreampad">Dream Pad</option>
+                  <option value="chiptune">8-Bit Square</option>
+                  <option value="cello">Cello Vox</option>
                 </select>
               </label>
 
               <label class="theremin-field">
-                <span>Makam / Dizi (Gam):</span>
+                <span>SCALE</span>
                 <select id="sel-theremin-scale" class="select-sm">
-                  <option value="pentatonic">Pentatonik (Daima Uyumlu)</option>
-                  <option value="blues">Blues Dizisi</option>
-                  <option value="major">Majör Gamı</option>
-                  <option value="chromatic">Kromatik (12 Nota)</option>
-                  <option value="continuous">Sürekli (Serbest Glissando)</option>
+                  <option value="pentatonic">Pentatonic</option>
+                  <option value="blues">Blues</option>
+                  <option value="major">Major</option>
+                  <option value="chromatic">Chromatic (12-Note)</option>
+                  <option value="continuous">Continuous</option>
                 </select>
               </label>
 
               <label class="slider-label">
-                <span>Atmosferik Reverb: <strong id="val-theremin-reverb">65%</strong></span>
+                <span>REVERB <strong id="val-theremin-reverb">65%</strong></span>
                 <input type="range" id="rng-theremin-reverb" min="0" max="1" step="0.02" value="0.65" />
               </label>
             </div>
 
             <div class="theremin-section">
-              <div class="section-title">🔁 Air Looper (Döngü &amp; Overdub)</div>
+              <div class="section-title">LOOPER</div>
 
-              <div class="looper-card synth-card">
+              <div class="looper-card">
                 <div class="looper-card-head">
-                  <span class="card-title">🎹 Synth Döngüsü</span>
-                  <span id="lbl-synth-layers" class="status-pill">0 Katman</span>
+                  <span class="card-title">SYNTH LOOP</span>
+                  <span id="lbl-synth-layers" class="status-pill">0 LAYERS</span>
                 </div>
-                <p class="looper-card-hint">👉 <strong>Sağa Swipe:</strong> Çaldığın melodiyi döngüye alır. Tekrar çalıp swipe'layarak yeni katmanlar (overdub) ekleyebilirsin.</p>
-                <button id="btn-clear-synth-loop" class="btn btn-ghost btn-xs">🗑 Synth Döngüsünü Sıfırla</button>
+                <p class="looper-card-hint">Touch right wall with right hand to commit or overdub synth layer.</p>
+                <button id="btn-clear-synth-loop" class="btn btn-ghost btn-xs">CLEAR SYNTH</button>
               </div>
 
-              <div class="looper-card drum-card">
+              <div class="looper-card">
                 <div class="looper-card-head">
-                  <span class="card-title">🥁 Davul Döngüsü (Sol El)</span>
-                  <span id="lbl-drum-hits" class="status-pill">0 Vuruş</span>
+                  <span class="card-title">DRUM LOOP</span>
+                  <span id="lbl-drum-hits" class="status-pill">0 HITS</span>
                 </div>
-                <p class="looper-card-hint">👈 <strong>Sola Swipe:</strong> Sol elinle vurduğun davulları döngüye alır. Yeni vuruşlar ekleyip tekrar swipe'layarak katmanla.</p>
-                <button id="btn-clear-drum-loop" class="btn btn-ghost btn-xs">🗑 Davul Döngüsünü Sıfırla</button>
+                <p class="looper-card-hint">Touch left wall with left hand to commit or overdub drum hits.</p>
+                <button id="btn-clear-drum-loop" class="btn btn-ghost btn-xs">CLEAR DRUMS</button>
               </div>
 
               <div class="looper-tempo-row">
-                <label>
-                  Tempo:
-                  <input type="number" id="inp-theremin-bpm" min="50" max="220" value="120" class="input-sm" /> BPM
+                <label class="tempo-inline">
+                  <span>TEMPO</span>
+                  <input type="number" id="inp-theremin-bpm" min="50" max="220" value="120" class="input-sm" />
+                  <span>BPM</span>
                 </label>
-                <button id="btn-clear-all-loops" class="btn btn-ghost btn-xs">🧹 Tümünü Sıfırla</button>
+                <button id="btn-clear-all-loops" class="btn btn-ghost btn-xs">CLEAR ALL</button>
               </div>
             </div>
 
-            <div class="theremin-gesture-guide">
-              <h4>✨ Hareket Kılavuzu</h4>
-              <ul>
-                <li><strong>✊ Yumruk Yap:</strong> Sesi açar (Yumruk sıkılaştıkça ses canlanır).</li>
-                <li><strong>↕️ Yukarı/Aşağı:</strong> Perdeyi kontrol eder. Yukarı çektikçe ses incelir.</li>
-                <li><strong>↔️ Sağ/Sol:</strong> Filtre parlaklığını açar/kapatır.</li>
-                <li><strong>🖐️ Eli Aç:</strong> Sesi keser ve arkasında uzayan atmosferik yankı bırakır.</li>
-                <li><strong>👉 Sağa Swipe:</strong> Synth melodisini sonsuz döngüye alır / overdub ekler.</li>
-                <li><strong>👈 Sola Swipe:</strong> Sol el davul vuruşlarını döngüye alır / overdub ekler.</li>
-              </ul>
+            <div class="theremin-section">
+              <div class="section-title">CONTROLS</div>
+              <div class="gesture-table">
+                <div class="gesture-row">
+                  <span class="gesture-key">R FIST</span>
+                  <span class="gesture-val">Play / Volume</span>
+                </div>
+                <div class="gesture-row">
+                  <span class="gesture-key">R Y / X</span>
+                  <span class="gesture-val">Pitch / Filter</span>
+                </div>
+                <div class="gesture-row">
+                  <span class="gesture-key">R WALL</span>
+                  <span class="gesture-val">Commit Synth Loop</span>
+                </div>
+                <div class="gesture-row">
+                  <span class="gesture-key">L WALL</span>
+                  <span class="gesture-val">Commit Drum Loop</span>
+                </div>
+                <div class="gesture-row">
+                  <span class="gesture-key">L PALM</span>
+                  <span class="gesture-val">Close-Open: Pointer Mode</span>
+                </div>
+              </div>
             </div>
           </div>
         </aside>
       </main>
 
-      <!-- Alt Kontrol Çubuğu -->
+      <!-- Bottom Bar -->
       <footer class="bottombar">
         <div class="control-group">
-          <button id="btn-toggle-cam" class="btn btn-primary">Başlat</button>
-          <button id="btn-calibrate" class="btn btn-secondary" disabled title="3 saniye eller rahatken dinlenme açısını kaydet">
-            🎯 Kalibre Et
+          <button id="btn-toggle-cam" class="btn btn-primary">START</button>
+          <button id="btn-calibrate" class="btn btn-secondary" disabled title="Calibrate neutral hand posture (3s)">
+            CALIBRATE
           </button>
         </div>
 
         <div class="control-group sliders-group">
           <label class="slider-label">
-            <span>Hassasiyet <strong id="val-sensitivity">1.00x</strong></span>
+            <span>SENSITIVITY <strong id="val-sensitivity">1.00x</strong></span>
             <input type="range" id="rng-sensitivity" min="0.4" max="2.0" step="0.05" value="1.0" />
           </label>
 
           <label class="slider-label">
-            <span>Hız Eşiği <strong id="val-velocity">1.35</strong></span>
+            <span>THRESHOLD <strong id="val-velocity">1.35</strong></span>
             <input type="range" id="rng-velocity" min="0.5" max="3.0" step="0.05" value="1.35" />
           </label>
 
           <label class="slider-label">
-            <span>Ses <strong id="val-volume">85%</strong></span>
+            <span>VOLUME <strong id="val-volume">85%</strong></span>
             <input type="range" id="rng-volume" min="0" max="1" step="0.01" value="0.85" />
           </label>
         </div>
 
         <div class="control-group toggles-group">
-          <label class="inline-toggle" title="Aynı elde aynı karede birden fazla parmak tetiklenirse yalnızca en hızlı vuran parmağı çal">
+          <label class="inline-toggle" title="Suppress sympathetic neighbor finger triggers">
             <input type="checkbox" id="chk-sympathy" checked />
-            <span>Sempati Bastırma</span>
+            <span>Anti-Crosstalk</span>
           </label>
 
-          <label class="inline-toggle" title="Harici DAW için canlı Web MIDI çıkışı gönder">
+          <label class="inline-toggle" title="Send live Web MIDI output">
             <input type="checkbox" id="chk-live-midi" />
-            <span>Canlı MIDI</span>
+            <span>Live MIDI</span>
           </label>
 
-          <select id="sel-midi-out" class="select-sm" disabled title="Web MIDI Çıkış Portu">
-            <option value="">MIDI Port Yok</option>
+          <select id="sel-midi-out" class="select-sm" disabled title="Web MIDI Output Port">
+            <option value="">No MIDI Port</option>
           </select>
         </div>
       </footer>
 
-      <!-- Kayıt Sonrası Önizleme ve İndirme Modalı -->
+      <!-- Recording Modal -->
       <div id="record-modal" class="modal-backdrop hidden">
         <div class="modal-box">
           <div class="modal-header">
-            <h3>🎬 Kayıt Tamamlandı</h3>
-            <button id="btn-close-modal" class="btn btn-ghost btn-sm">✕</button>
+            <h3>RECORDING EXPORT</h3>
+            <button id="btn-close-modal" class="btn btn-ghost btn-sm">CLOSE</button>
           </div>
           <div class="modal-body">
             <video id="preview-video" controls playsinline></video>
             <div class="modal-meta">
-              <span id="modal-info-duration">Süre: 0.0 sn</span>
-              <span id="modal-info-notes">Kaydedilen Nota: 0</span>
+              <span id="modal-info-duration">Duration: 0.0s</span>
+              <span id="modal-info-notes">Notes: 0</span>
               <label>
-                BPM:
+                BPM
                 <input type="number" id="inp-midi-bpm" min="40" max="240" value="120" class="input-sm" />
               </label>
               <label>
-                Quantize:
+                Quantize
                 <select id="sel-modal-quantize" class="select-sm">
-                  <option value="off">Kapalı</option>
+                  <option value="off">Off</option>
                   <option value="1/8">1/8</option>
                   <option value="1/16">1/16</option>
                 </select>
               </label>
               <label class="inline-toggle">
                 <input type="checkbox" id="chk-multitrack" checked />
-                <span>Ayrı Track'ler</span>
+                <span>Multi-track</span>
               </label>
             </div>
           </div>
           <div class="modal-footer">
-            <button id="btn-dl-video" class="btn btn-secondary">⬇ Videoyu İndir</button>
-            <button id="btn-dl-midi" class="btn btn-secondary">🎹 MIDI İndir (.mid)</button>
-            <button id="btn-dl-both" class="btn btn-primary">✨ İkisini de İndir</button>
+            <button id="btn-dl-video" class="btn btn-secondary">VIDEO</button>
+            <button id="btn-dl-midi" class="btn btn-secondary">MIDI (.MID)</button>
+            <button id="btn-dl-both" class="btn btn-primary">DOWNLOAD BOTH</button>
           </div>
         </div>
       </div>
