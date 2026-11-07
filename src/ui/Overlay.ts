@@ -404,19 +404,19 @@ export class Overlay {
     x: number,
     y: number,
     fontSize: number,
-    color = '#4ade80',
+    color = '#e2e8f0',
     align: CanvasTextAlign = 'left'
   ): void {
     ctx.save();
-    ctx.font = `600 ${fontSize}px "Share Tech Mono", "VT323", Consolas, monospace`;
+    ctx.font = `500 ${fontSize}px "Plus Jakarta Sans", "Inter", system-ui, sans-serif`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
 
-    // Crisp black outline for high contrast over camera feed, zero blurry neon
-    ctx.shadowBlur = 0;
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = '#050a06';
-    ctx.strokeText(text, x, y);
+    // Subtle shadow for legibility over camera video without any strokeText miter spikes
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 1;
 
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
@@ -438,8 +438,8 @@ export class Overlay {
 
     ctx.save();
 
-    // Vertical Pitch Guide Laser
-    ctx.strokeStyle = 'rgba(74, 222, 128, 0.25)';
+    // Vertical Pitch Guide Line
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.22)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
@@ -448,21 +448,14 @@ export class Overlay {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const tickSteps = 8;
-    ctx.fillStyle = 'rgba(74, 222, 128, 0.35)';
-    for (let i = 0; i <= tickSteps; i++) {
-      const ty = vp.offsetY + (vp.drawHeight * (0.15 + (i / tickSteps) * 0.7));
-      ctx.fillRect(x - 4, ty, 8, 1);
-    }
-
     const clench = tState.clenchRatio;
     const isPlaying = tState.active;
 
     if (isPlaying) {
-      const orbRadius = 22 + clench * 18;
+      const orbRadius = 20 + clench * 16;
       const grad = ctx.createRadialGradient(x, y, 4, x, y, orbRadius);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-      grad.addColorStop(0.4, 'rgba(74, 222, 128, 0.8)');
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.92)');
+      grad.addColorStop(0.45, 'rgba(74, 222, 128, 0.75)');
       grad.addColorStop(1, 'rgba(34, 197, 94, 0)');
 
       ctx.fillStyle = grad;
@@ -470,23 +463,21 @@ export class Overlay {
       ctx.arc(x, y, orbRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = '#4ade80';
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(x, y, orbRadius * 1.15, 0, Math.PI * 2);
+      ctx.arc(x, y, orbRadius * 1.12, 0, Math.PI * 2);
       ctx.stroke();
 
-      const noteLabel = `[${tState.noteName}]`;
-      this.drawDigitalText(ctx, noteLabel, x, y - orbRadius - 18, 13, '#4ade80', 'center');
+      this.drawDigitalText(ctx, tState.noteName, x, y - orbRadius - 16, 13, '#f8fafc', 'center');
     } else {
-      ctx.strokeStyle = 'rgba(74, 222, 128, 0.35)';
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.35)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(x, y, 16, 0, Math.PI * 2);
+      ctx.arc(x, y, 15, 0, Math.PI * 2);
       ctx.stroke();
 
-      const promptText = '[YUMRUK = ÇAL]';
-      this.drawDigitalText(ctx, promptText, x, y - 24, 12, '#4ade80', 'center');
+      this.drawDigitalText(ctx, 'Fist to play', x, y - 24, 12, 'rgba(226, 232, 240, 0.8)', 'center');
     }
 
     ctx.restore();
@@ -548,17 +539,17 @@ export class Overlay {
     vp: RenderViewport,
     _nowMs: number
   ): void {
-    const pad2 = (n: number) => (n < 10 ? '0' + n : String(n));
-    const green = '#4ade80';
+    const textColor = 'rgba(241, 245, 249, 0.9)';
+    const mutedColor = 'rgba(203, 213, 225, 0.72)';
 
     const m = this.liveMetrics;
     const drumStatus = m ? m.drum.status : this.isDrumCapturing ? 'recording' : this.looperStatus?.drumIsPlaying ? 'looping' : 'idle';
     const synthStatus = m ? m.synth.status : this.isSynthCapturing ? 'recording' : (this.looperStatus?.synthLayersCount ?? 0) > 0 ? 'looping' : 'idle';
 
-    const y = vp.offsetY + vp.drawHeight - 20;
+    const y = vp.offsetY + vp.drawHeight - 18;
 
     // --- LEFT HAND (DRUMS) HUD ---
-    const xLeft = vp.offsetX + 20;
+    const xLeft = vp.offsetX + 18;
     if (drumStatus === 'recording') {
       const bar = m ? m.drum.bar : 1;
       const beat = m ? m.drum.beat : 1;
@@ -566,11 +557,11 @@ export class Overlay {
       const hits = m ? m.drum.hitsCount : this.pendingDrumCount;
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] REC BAR 0${bar} BEAT 0${beat} (${pad2(targetBeats)} VURUŞ • ${hits} NOTA)`,
+        `Drums   Rec ${bar}.${beat}   ${targetBeats} beats   ${hits} notes`,
         xLeft,
         y,
-        14,
-        green,
+        13,
+        textColor,
         'left'
       );
     } else if (drumStatus === 'looping') {
@@ -579,38 +570,38 @@ export class Overlay {
       const hits = m ? m.drum.hitsCount : this.looperStatus?.drumEventsCount ?? 0;
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] PLAY ${pad2(totalBeats)} VURUŞ (${hits} NOTA) BEAT 0${beat}`,
+        `Drums   ${totalBeats} beats   ${hits} notes   Beat ${beat}`,
         xLeft,
         y,
-        14,
-        green,
+        13,
+        textColor,
         'left'
       );
     } else {
       this.drawDigitalText(
         ctx,
-        `[L-DRUM] HAZIR`,
+        this.leftPointerMode ? 'Drums   Pointer mode' : 'Drums',
         xLeft,
         y,
-        14,
-        green,
+        13,
+        mutedColor,
         'left'
       );
     }
 
     // --- RIGHT HAND (SYNTH) HUD ---
-    const xRight = vp.offsetX + vp.drawWidth - 20;
+    const xRight = vp.offsetX + vp.drawWidth - 18;
     if (synthStatus === 'recording') {
       const bar = m ? m.synth.bar : 1;
       const beat = m ? m.synth.beat : 1;
       const targetBeats = m ? m.synth.targetBeats : 2;
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] REC BAR 0${bar} BEAT 0${beat} (${pad2(targetBeats)} VURUŞ)`,
+        `Synth   Rec ${bar}.${beat}   ${targetBeats} beats`,
         xRight,
         y,
-        14,
-        green,
+        13,
+        textColor,
         'right'
       );
     } else if (synthStatus === 'looping') {
@@ -619,21 +610,21 @@ export class Overlay {
       const layers = m ? m.synth.layersCount : this.looperStatus?.synthLayersCount ?? 0;
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] PLAY ${pad2(totalBeats)} VURUŞ (KATMAN ${layers}) BEAT 0${beat}`,
+        `Synth   ${totalBeats} beats   ${layers} ${layers === 1 ? 'layer' : 'layers'}   Beat ${beat}`,
         xRight,
         y,
-        14,
-        green,
+        13,
+        textColor,
         'right'
       );
     } else {
       this.drawDigitalText(
         ctx,
-        `[R-SYNTH] HAZIR`,
+        'Synth',
         xRight,
         y,
-        14,
-        green,
+        13,
+        mutedColor,
         'right'
       );
     }
@@ -650,27 +641,26 @@ export class Overlay {
     const { x, y, w, h } = bounds;
 
     const isFlashing = nowMs - this.metroFlashMs < 180;
-    const green = '#4ade80';
-    const dimGreen = 'rgba(74, 222, 128, 0.45)';
+    const activeColor = '#4ade80';
+    const idleBorder = 'rgba(226, 232, 240, 0.35)';
+    const idleText = 'rgba(226, 232, 240, 0.78)';
 
     ctx.save();
 
-    // İçi boş yeşil kutu (Hollow green outline box, no fill)
-    ctx.lineWidth = isFlashing ? 1.8 : 1.0;
+    ctx.lineWidth = isFlashing ? 1.5 : 1.0;
     ctx.strokeStyle = m.enabled
-      ? (m.isTick ? '#86efac' : green)
-      : (m.hovered ? green : dimGreen);
+      ? activeColor
+      : (m.hovered ? 'rgba(226, 232, 240, 0.75)' : idleBorder);
 
     ctx.strokeRect(x, y, w, h);
 
-    // Sadece METRONOME ve BPM yazısı
     const textColor = m.enabled
-      ? (m.isTick && m.isDownbeat ? '#ffffff' : green)
-      : (m.hovered ? green : dimGreen);
+      ? (m.isTick && m.isDownbeat ? '#ffffff' : activeColor)
+      : (m.hovered ? '#ffffff' : idleText);
 
     const centerX = x + w / 2;
-    this.drawDigitalText(ctx, 'METRONOME', centerX, y + 13, 11, textColor, 'center');
-    this.drawDigitalText(ctx, `${m.bpm} BPM`, centerX, y + 27, 10, textColor, 'center');
+    this.drawDigitalText(ctx, 'Metronome', centerX, y + 13, 11.5, textColor, 'center');
+    this.drawDigitalText(ctx, `${m.bpm} BPM`, centerX, y + 27, 10.5, textColor, 'center');
 
     ctx.restore();
   }
@@ -685,9 +675,9 @@ export class Overlay {
     ctx.globalAlpha = alpha;
 
     const bx = vp.offsetX + vp.drawWidth / 2;
-    const by = vp.offsetY + 32;
+    const by = vp.offsetY + 28;
 
-    this.drawDigitalText(ctx, toast.text, bx, by, 14, '#4ade80', 'center');
+    this.drawDigitalText(ctx, toast.text, bx, by, 13, '#f8fafc', 'center');
 
     ctx.restore();
   }

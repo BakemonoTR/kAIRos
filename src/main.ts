@@ -309,7 +309,7 @@ async function bootstrap(): Promise<void> {
       ensureAllEngines();
       const newState = metronome.toggle();
       overlay.triggerMetroFlash();
-      overlay.showToast(newState ? '[METRONOM: AÇIK]' : '[METRONOM: KAPALI]', '#4ade80');
+      overlay.showToast(newState ? 'Metronome on' : 'Metronome off', '#f8fafc');
     }
   });
 
@@ -538,8 +538,8 @@ async function bootstrap(): Promise<void> {
               overlay.setLeftPointerMode(isPointer);
               leftLockoutUntilMs = nowMs + 350;
               overlay.showToast(
-                isPointer ? '[DOKUNMA MODU: AÇIK]' : '[DOKUNMA MODU: KAPALI]',
-                '#4ade80'
+                isPointer ? 'Pointer mode on' : 'Pointer mode off',
+                '#f8fafc'
               );
               const tip = rawHand.landmarks[8];
               metroZoneArmed = !(tip && tip.x <= 0.22 && tip.y <= 0.24);
@@ -575,8 +575,8 @@ async function bootstrap(): Promise<void> {
                     store.updateSettings({ thereminPreset: nextPreset.preset });
                     selThereminPreset.value = nextPreset.preset;
                     theremin.playPresetChangeChime();
-                    overlay.showToast(`[SYNTH: ${nextPreset.name.toUpperCase()}]`, '#4ade80');
-                    store.emit('statusMessage', `Synth sesi değiştirildi: ${nextPreset.name}`);
+                    overlay.showToast(`Synth: ${nextPreset.name}`, '#f8fafc');
+                    store.emit('statusMessage', `Synth preset: ${nextPreset.name}`);
                   }
                 } else if (swipe.direction === 'right') {
                   // Wall bump / swipe to the right on right hand
@@ -585,16 +585,16 @@ async function bootstrap(): Promise<void> {
                   const res = airLooper.commitSynthLoop();
                   if (res.totalLayers > 0) {
                     overlay.showToast(
-                      `[SYNTH: ${res.beatsCount} VURUŞ (KATMAN ${res.totalLayers})]`,
-                      '#4ade80'
+                      `Synth loop: ${res.beatsCount} beats (Layer ${res.totalLayers})`,
+                      '#f8fafc'
                     );
                     store.emit(
                       'statusMessage',
-                      `Synth döngüye alındı (${res.beatsCount} Vuruş • Katman ${res.totalLayers})`
+                      `Synth loop (${res.beatsCount} beats • Layer ${res.totalLayers})`
                     );
                   } else {
-                    overlay.showToast('[SYNTH: HENÜZ ÇALINMADI]', '#94a3b8');
-                    store.emit('statusMessage', 'Henüz synth çalınmadı');
+                    overlay.showToast('Synth not played yet', '#94a3b8');
+                    store.emit('statusMessage', 'Synth not played yet');
                   }
                   refreshLooperUi();
                 }
@@ -605,16 +605,16 @@ async function bootstrap(): Promise<void> {
                 const res = airLooper.commitDrumLoop();
                 if (res.addedCount > 0) {
                   overlay.showToast(
-                    `[DAVUL: ${res.beatsCount} VURUŞ (${res.totalCount} NOTA)]`,
-                    '#4ade80'
+                    `Drum loop: ${res.beatsCount} beats (${res.totalCount} notes)`,
+                    '#f8fafc'
                   );
                   store.emit(
                     'statusMessage',
-                    `Davul döngüye alındı (${res.beatsCount} Vuruş • ${res.totalCount} Nota)`
+                    `Drum loop (${res.beatsCount} beats • ${res.totalCount} notes)`
                   );
                 } else {
-                  overlay.showToast('[DAVUL: HENÜZ ÇALINMADI]', '#94a3b8');
-                  store.emit('statusMessage', 'Henüz davul çalınmadı');
+                  overlay.showToast('Drums not played yet', '#94a3b8');
+                  store.emit('statusMessage', 'Drums not played yet');
                 }
                 refreshLooperUi();
               }
@@ -675,7 +675,7 @@ async function bootstrap(): Promise<void> {
               lastMetroToggleMs = nowMs;
               metroZoneArmed = false;
               overlay.triggerMetroFlash(nowMs);
-              overlay.showToast(newState ? '[METRONOM: AÇIK]' : '[METRONOM: KAPALI]', '#4ade80');
+              overlay.showToast(newState ? 'Metronome on' : 'Metronome off', '#f8fafc');
             }
           } else if (!isHandNearMetroZone && nowMs - lastMetroToggleMs > 350) {
             metroZoneArmed = true;
