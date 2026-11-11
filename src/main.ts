@@ -1388,7 +1388,7 @@ async function bootstrap(): Promise<void> {
   function triggerVideoDownload(): void {
     if (!lastRecordedVideo) return;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    downloadBlob(lastRecordedVideo.blob, `beatcam-${stamp}.${lastRecordedVideo.extension}`);
+    downloadBlob(lastRecordedVideo.blob, `kairos-${stamp}.${lastRecordedVideo.extension}`);
   }
 
   function triggerMidiDownload(): void {
@@ -1406,7 +1406,7 @@ async function bootstrap(): Promise<void> {
       midiMapMode: settings.midiMapMode,
     });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    downloadBlob(midiBlob, `beatcam-${stamp}.mid`);
+    downloadBlob(midiBlob, `kairos-${stamp}.mid`);
   }
 
   btnDlVideo.addEventListener('click', triggerVideoDownload);
@@ -1537,7 +1537,7 @@ async function bootstrap(): Promise<void> {
       const json = await sampleStore.exportPreset(store.getSlots());
       const blob = new Blob([json], { type: 'application/json' });
       const stamp = new Date().toISOString().slice(0, 10);
-      downloadBlob(blob, `beatcam-preset-${stamp}.json`);
+      downloadBlob(blob, `kairos-preset-${stamp}.json`);
       store.emit('statusMessage', 'Preset dÄ±ÅŸa aktarÄ±ldÄ±');
     } catch (err) {
       console.error(err);

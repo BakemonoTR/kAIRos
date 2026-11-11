@@ -88,7 +88,7 @@ export class MidiRecorder {
   buildMidiBlob(slots: SlotData[], options: MidiExportOptions): Blob {
     const bpm = Math.max(40, Math.min(240, options.bpm || 120));
     const midi = new Midi();
-    midi.header.name = 'BeatCam Session';
+    midi.header.name = 'kAIRos Session';
     midi.header.tempos = [{ ticks: 0, bpm }];
     midi.header.timeSignatures = [{ ticks: 0, timeSignature: [4, 4], measures: 0 }];
     midi.header.update();
@@ -128,7 +128,7 @@ export class MidiRecorder {
       }
     } else {
       const track = midi.addTrack();
-      track.name = 'BeatCam Performance';
+      track.name = 'kAIRos Performance';
       track.channel = channel;
       for (const ev of this.events) {
         const slot = slots[ev.fingerId];
@@ -144,7 +144,7 @@ export class MidiRecorder {
     // Ensure at least an empty track exists if user recorded 0 hits so DAWs open cleanly
     if (midi.tracks.length === 0) {
       const empty = midi.addTrack();
-      empty.name = 'BeatCam Empty Track';
+      empty.name = 'kAIRos Empty Track';
       empty.channel = channel;
     }
 
