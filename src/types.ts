@@ -374,6 +374,7 @@ export interface OneHitPadData {
   placed: boolean; // false = in right dock, true = placed inside camera view
   normX: number; // 0..1 inside camera viewport
   normY: number; // 0..1 inside camera viewport
+  scale?: number; // 0.55 .. 2.4 (default 1.0)
   sourceType: 'synth' | 'custom';
   synthSeed: number;
   synthType: SynthPresetType;

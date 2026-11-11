@@ -118,8 +118,9 @@ export class Overlay {
     pad: OneHitPadData,
     vp: RenderViewport
   ): { x: number; y: number; w: number; h: number } {
-    const w = 96;
-    const h = 52;
+    const scale = Math.max(0.55, Math.min(2.4, pad.scale ?? 1.0));
+    const w = Math.round(96 * scale);
+    const h = Math.round(52 * scale);
     const cx = vp.offsetX + pad.normX * vp.drawWidth;
     const cy = vp.offsetY + pad.normY * vp.drawHeight;
     return {
@@ -341,6 +342,26 @@ export class Overlay {
           ctx.fill();
         }
       }
+
+      // Sağ el bir One-Hit kutucuğunu tutarken sol el başparmak ve işaret parmağı arasında Zoom çizgisi çiz
+      if (!isRightHand && this.grabbedPadId !== null && lms[4] && lms[8]) {
+        const grabbedPad = this.oneHitPads.find((p) => p.id === this.grabbedPadId);
+        const pct = Math.round(((grabbedPad?.scale ?? 1.0) * 100));
+        const x4 = toX(lms[4].x);
+        const y4 = toY(lms[4].y);
+        const x8 = toX(lms[8].x);
+        const y8 = toY(lms[8].y);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x4, y4);
+        ctx.lineTo(x8, y8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        this.drawDigitalText(ctx, `Size ${pct}%`, (x4 + x8) * 0.5, (y4 + y8) * 0.5 - 12, 11, '#38bdf8', 'center');
+      }
+
       ctx.restore();
     }
 
@@ -754,6 +775,7 @@ export class Overlay {
   ): void {
     for (const pad of this.oneHitPads) {
       if (!pad.placed) continue;
+      const scale = Math.max(0.55, Math.min(2.4, pad.scale ?? 1.0));
       const { x, y, w, h } = this.getOneHitPadBounds(pad, vp);
       const lastFlash = this.oneHitFlashes.get(pad.id) ?? 0;
       const flashElapsed = nowMs - lastFlash;
@@ -770,7 +792,7 @@ export class Overlay {
           ? 'rgba(23, 37, 84, 0.88)'
           : 'rgba(15, 18, 24, 0.82)';
       ctx.beginPath();
-      ctx.roundRect(x, y, w, h, 7);
+      ctx.roundRect(x, y, w, h, Math.max(5, Math.round(7 * scale)));
       ctx.fill();
 
       // Border
@@ -783,18 +805,28 @@ export class Overlay {
       // Top color accent strip
       ctx.fillStyle = pad.color;
       ctx.beginPath();
-      ctx.roundRect(x + 8, y + 6, 18, 3, 1.5);
+      ctx.roundRect(x + 8 * scale, y + 6 * scale, 18 * scale, Math.max(2, 3 * scale), 1.5);
       ctx.fill();
 
       // Pad label & sample name
-      this.drawDigitalText(ctx, pad.label, x + 32, y + 14, 10.5, 'rgba(226, 232, 240, 0.72)', 'left');
+      const topFont = Math.max(8.5, Math.min(15, 10.5 * scale));
+      const mainFont = Math.max(9.5, Math.min(18, 11.5 * scale));
+      this.drawDigitalText(
+        ctx,
+        isGrabbed ? `${pad.label} · ${Math.round(scale * 100)}%` : pad.label,
+        x + 30 * scale,
+        y + 14 * scale,
+        topFont,
+        'rgba(226, 232, 240, 0.78)',
+        'left'
+      );
       const shortName = pad.sampleName.length > 12 ? `${pad.sampleName.slice(0, 11)}…` : pad.sampleName;
       this.drawDigitalText(
         ctx,
-        isGrabbed ? 'Moving...' : shortName,
+        shortName,
         x + w / 2,
-        y + 34,
-        11.5,
+        y + 34 * scale,
+        mainFont,
         isFlashing ? '#ffffff' : '#f1f5f9',
         'center'
       );

@@ -978,11 +978,9 @@ async function bootstrap(): Promise<void> {
               theremin.silence();
               overlay.setThereminState(null);
 
-              // Right-hand 5-finger One-Hit Pad Control (Drag with pinch, Play by touching with fingers)
+              // Right-hand 5-finger One-Hit Pad Control (Drag with right-hand pinch, Resize with left-hand pinch/spread, Play by touching)
               const lms = rawHand.landmarks;
               const vp = overlay.getLastViewport(video);
-              const halfNormW = 48 / Math.max(1, vp.drawWidth);
-              const halfNormH = 26 / Math.max(1, vp.drawHeight);
 
               const thumbTip = lms[4];
               const indexTip = lms[8];
@@ -1010,7 +1008,32 @@ async function bootstrap(): Promise<void> {
                   } else {
                     const nx = Math.max(0.06, Math.min(0.88, pinchMidX));
                     const ny = Math.max(0.06, Math.min(0.94, pinchMidY));
-                    store.updateOneHitPad(handGrabbedPadId, { normX: nx, normY: ny });
+                    const patch: { normX: number; normY: number; scale?: number } = { normX: nx, normY: ny };
+
+                    // Check if Left Hand is visible in frame to resize the grabbed pad (phone-style zoom in / out)
+                    const leftHandObj = mapped.rawHands.find((h) => h.hand === 'L');
+                    if (leftHandObj && leftHandObj.landmarks[4] && leftHandObj.landmarks[8]) {
+                      const lThumb = leftHandObj.landmarks[4];
+                      const lIndex = leftHandObj.landmarks[8];
+                      const { palmCenter: lPalm, handScale: lScale } = gestureDetector.computeHandGeometry(
+                        leftHandObj.landmarks
+                      );
+                      if (lPalm.y < 0.86) {
+                        const lPinchDist = Math.hypot(lThumb.x - lIndex.x, lThumb.y - lIndex.y);
+                        const lSpreadRatio = lPinchDist / Math.max(0.04, lScale);
+                        // Map lSpreadRatio (0.18 = pinched small -> 0.55x, 0.65 = medium -> 1.0x, 1.30 = spread wide -> 2.3x)
+                        const rawTargetScale = Math.max(
+                          0.55,
+                          Math.min(2.35, 0.55 + ((lSpreadRatio - 0.18) / (1.30 - 0.18)) * 1.80)
+                        );
+                        const grabbedPad = currentPads.find((p) => p.id === handGrabbedPadId);
+                        const prevScale = grabbedPad?.scale ?? 1.0;
+                        const smoothedScale = prevScale * 0.68 + rawTargetScale * 0.32;
+                        patch.scale = Number(smoothedScale.toFixed(2));
+                      }
+                    }
+
+                    store.updateOneHitPad(handGrabbedPadId, patch);
                     overlay.setOneHitPads(store.getOneHitPads());
                   }
                 } else {
@@ -1023,6 +1046,9 @@ async function bootstrap(): Promise<void> {
                 for (let i = currentPads.length - 1; i >= 0; i--) {
                   const pad = currentPads[i];
                   if (!pad.placed) continue;
+                  const s = pad.scale ?? 1.0;
+                  const halfNormW = (48 * s) / Math.max(1, vp.drawWidth);
+                  const halfNormH = (26 * s) / Math.max(1, vp.drawHeight);
                   if (
                     Math.abs(pinchMidX - pad.normX) <= halfNormW * 1.25 &&
                     Math.abs(pinchMidY - pad.normY) <= halfNormH * 1.25
@@ -1043,6 +1069,9 @@ async function bootstrap(): Promise<void> {
                     padInsidePrevFrame.delete(pad.id);
                     continue;
                   }
+                  const s = pad.scale ?? 1.0;
+                  const halfNormW = (48 * s) / Math.max(1, vp.drawWidth);
+                  const halfNormH = (26 * s) / Math.max(1, vp.drawHeight);
                   let anyFingerInside = false;
                   for (const tIdx of tipIndices) {
                     const tip = lms[tIdx];
@@ -1155,6 +1184,7 @@ async function bootstrap(): Promise<void> {
         const { taps, releases } = tapDetector.process(mapped, slots, settings, nowMs);
         const leftSimultaneousTaps = taps.filter((t) => t.fingerId < 5).length;
         const isLeftSuppressed =
+          handGrabbedPadId !== null ||
           gestureDetector.isLeftPointerMode() ||
           isLeftClosingPalm ||
           leftSimultaneousTaps >= 3 ||
@@ -1167,10 +1197,11 @@ async function bootstrap(): Promise<void> {
               const fData = mapped.fingers.get(tap.fingerId);
               if (fData) {
                 const vp = overlay.getLastViewport(video);
-                const halfNormW = 52 / Math.max(1, vp.drawWidth);
-                const halfNormH = 30 / Math.max(1, vp.drawHeight);
                 for (const pad of store.getOneHitPads()) {
                   if (!pad.placed) continue;
+                  const s = pad.scale ?? 1.0;
+                  const halfNormW = (52 * s) / Math.max(1, vp.drawWidth);
+                  const halfNormH = (30 * s) / Math.max(1, vp.drawHeight);
                   if (
                     Math.abs(fData.tip.x - pad.normX) <= halfNormW &&
                     Math.abs(fData.tip.y - pad.normY) <= halfNormH
