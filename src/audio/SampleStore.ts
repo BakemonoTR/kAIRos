@@ -1,8 +1,10 @@
 import { get, set, del } from 'idb-keyval';
-import { FINGER_METAS, FingerId, SlotData } from '../types';
+import { FINGER_METAS, FingerId, OneHitPadData, SlotData } from '../types';
 
 const SLOTS_META_KEY = 'beatcam_slots_meta_v1';
 const sampleKey = (fingerId: FingerId) => `beatcam_sample_v1_${fingerId}`;
+const ONEHIT_META_KEY = 'beatcam_onehit_meta_v1';
+const oneHitSampleKey = (padId: number) => `beatcam_onehit_sample_v1_${padId}`;
 
 export interface StoredCustomSample {
   fileName: string;
@@ -119,5 +121,30 @@ export class SampleStore {
 
     await this.saveSlotsMeta(parsed.slots);
     return parsed.slots;
+  }
+
+  async saveOneHitPadsMeta(pads: OneHitPadData[]): Promise<void> {
+    await set(ONEHIT_META_KEY, pads);
+  }
+
+  async loadOneHitPadsMeta(): Promise<OneHitPadData[] | null> {
+    const saved = await get<OneHitPadData[]>(ONEHIT_META_KEY);
+    if (!saved || !Array.isArray(saved) || saved.length === 0) return null;
+    return saved;
+  }
+
+  async saveOneHitCustomSample(
+    padId: number,
+    fileName: string,
+    mimeType: string,
+    data: ArrayBuffer
+  ): Promise<void> {
+    const record: StoredCustomSample = { fileName, mimeType, data };
+    await set(oneHitSampleKey(padId), record);
+  }
+
+  async loadOneHitCustomSample(padId: number): Promise<StoredCustomSample | null> {
+    const record = await get<StoredCustomSample>(oneHitSampleKey(padId));
+    return record ?? null;
   }
 }

@@ -645,6 +645,37 @@ function runTests() {
     assert(teCustom.getCustomParams().osc2Detune === 24, 'getCustomParams should return updated osc2Detune');
   }
 
+  // 18. Test Right-Hand 5-Finger One-Hit Pad Mode Toggle (Palm Close -> Open)
+  {
+    const gdRightPad = new GestureDetector();
+    assert(gdRightPad.isRightPadMode() === false, 'Right pad mode should initially be false');
+
+    // Open right hand
+    gdRightPad.process('R', createMockHand('open', 0.65, 0.50), 12000);
+    // Close right palm
+    gdRightPad.process('R', createMockHand('closed', 0.65, 0.50), 12040);
+    gdRightPad.process('R', createMockHand('closed', 0.65, 0.50), 12120);
+    // Open right palm again -> toggles rightPadMode ON
+    const on1 = gdRightPad.process('R', createMockHand('open', 0.65, 0.50), 12200);
+    const on2 = gdRightPad.process('R', createMockHand('open', 0.65, 0.50), 12240);
+
+    assert(gdRightPad.isRightPadMode() === true, 'Closing and opening right palm must toggle rightPadMode ON');
+    assert(on1.rightPadModeToggled || on2.rightPadModeToggled, 'rightPadModeToggled flag must be true on toggle frame');
+
+    // While in rightPadMode, touching right wall must NOT trigger synth loop commit
+    const wallWhilePadMode = gdRightPad.process('R', createMockHand('open', 0.90, 0.50), 12600);
+    assert(wallWhilePadMode.swipe === null, 'Right wall bump must be disabled while in 5-finger one-hit pad mode');
+
+    // Close and open right palm again -> toggles rightPadMode OFF
+    gdRightPad.process('R', createMockHand('closed', 0.65, 0.50), 13000);
+    gdRightPad.process('R', createMockHand('closed', 0.65, 0.50), 13100);
+    const off1 = gdRightPad.process('R', createMockHand('open', 0.65, 0.50), 13200);
+    const off2 = gdRightPad.process('R', createMockHand('open', 0.65, 0.50), 13240);
+
+    assert(gdRightPad.isRightPadMode() === false, 'Closing and opening right palm again must toggle rightPadMode OFF');
+    assert(off1.rightPadModeToggled || off2.rightPadModeToggled, 'rightPadModeToggled flag must be true when toggling OFF');
+  }
+
   console.log(`\n🎉 ALL ${passed}/${total} TESTS PASSED CLEANLY!`);
 }
 

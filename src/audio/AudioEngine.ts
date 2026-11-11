@@ -6,6 +6,7 @@ export class AudioEngine {
   private masterGain: GainNode | null = null;
   private streamDest: MediaStreamAudioDestinationNode | null = null;
   private buffers = new Map<FingerId, AudioBuffer>();
+  private oneHitBuffers = new Map<number, AudioBuffer>();
   private masterVolume = 0.85;
 
   ensureContext(): AudioContext {
@@ -88,6 +89,38 @@ export class AudioEngine {
 
     const gain = ctx.createGain();
     const clampedVel = Math.max(0.12, Math.min(1.0, velocity));
+    const targetTime = when > 0 ? when : ctx.currentTime;
+    gain.gain.setValueAtTime(clampedVel, targetTime);
+
+    source.connect(gain);
+    gain.connect(this.masterGain);
+    source.start(targetTime);
+  }
+
+  setOneHitBuffer(padId: number, buffer: AudioBuffer): void {
+    this.oneHitBuffers.set(padId, buffer);
+  }
+
+  async assignSynthToOneHit(
+    padId: number,
+    seed: number,
+    forcedType?: SynthPresetType
+  ): Promise<GeneratedSynthResult> {
+    const res = await SynthGenerator.generate(seed, forcedType, this.getSampleRate());
+    this.oneHitBuffers.set(padId, res.buffer);
+    return res;
+  }
+
+  triggerOneHit(padId: number, velocity = 0.92, when = 0): void {
+    const ctx = this.ensureContext();
+    const buffer = this.oneHitBuffers.get(padId);
+    if (!buffer || !this.masterGain) return;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = ctx.createGain();
+    const clampedVel = Math.max(0.15, Math.min(1.0, velocity));
     const targetTime = when > 0 ? when : ctx.currentTime;
     gain.gain.setValueAtTime(clampedVel, targetTime);
 

@@ -1,8 +1,10 @@
 import {
   AppSettings,
+  DEFAULT_ONE_HIT_PADS,
   FINGER_METAS,
   FingerId,
   MidiMapMode,
+  OneHitPadData,
   SlotData,
   TapEvent,
   NoteOffEvent,
@@ -25,6 +27,7 @@ export interface StoreEvents {
   thereminUpdate: ThereminState;
   swipeEvent: SwipeEvent;
   looperUpdate: LooperStatus;
+  oneHitPadsChanged: OneHitPadData[];
 }
 
 const SETTINGS_STORAGE_KEY = 'beatcam_settings_v1';
@@ -80,11 +83,13 @@ function loadInitialSettings(): AppSettings {
 
 export class AppStore {
   private slots: SlotData[];
+  private oneHitPads: OneHitPadData[];
   private settings: AppSettings;
   private listeners = new Map<keyof StoreEvents, Set<Listener<unknown>>>();
 
   constructor() {
     this.settings = loadInitialSettings();
+    this.oneHitPads = DEFAULT_ONE_HIT_PADS.map((p) => ({ ...p }));
     this.slots = FINGER_METAS.map((meta, idx) => ({
       fingerId: meta.id,
       enabled: idx < this.settings.activeFingerCount,
@@ -118,6 +123,24 @@ export class AppStore {
   replaceSlots(nextSlots: SlotData[]): void {
     this.slots = nextSlots;
     this.emit('slotsChanged', this.slots);
+  }
+
+  getOneHitPads(): OneHitPadData[] {
+    return this.oneHitPads;
+  }
+
+  updateOneHitPad(id: number, patch: Partial<OneHitPadData>): OneHitPadData {
+    const idx = this.oneHitPads.findIndex((p) => p.id === id);
+    if (idx === -1) return this.oneHitPads[0];
+    const updated: OneHitPadData = { ...this.oneHitPads[idx], ...patch };
+    this.oneHitPads[idx] = updated;
+    this.emit('oneHitPadsChanged', this.oneHitPads);
+    return updated;
+  }
+
+  replaceOneHitPads(nextPads: OneHitPadData[]): void {
+    this.oneHitPads = nextPads;
+    this.emit('oneHitPadsChanged', this.oneHitPads);
   }
 
   getSettings(): AppSettings {

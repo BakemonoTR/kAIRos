@@ -365,3 +365,91 @@ export const FINGER_METAS: FingerMeta[] = [
     defaultSynthType: 'bell',
   },
 ];
+
+export interface OneHitPadData {
+  id: number;
+  label: string;
+  sampleName: string;
+  color: string;
+  placed: boolean; // false = in right dock, true = placed inside camera view
+  normX: number; // 0..1 inside camera viewport
+  normY: number; // 0..1 inside camera viewport
+  sourceType: 'synth' | 'custom';
+  synthSeed: number;
+  synthType: SynthPresetType;
+}
+
+export const DEFAULT_ONE_HIT_PADS: OneHitPadData[] = [
+  {
+    id: 0,
+    label: 'Hit 1',
+    sampleName: 'Sub Drop',
+    color: '#38bdf8',
+    placed: false,
+    normX: 0.78,
+    normY: 0.22,
+    sourceType: 'synth',
+    synthSeed: 9101,
+    synthType: 'kick',
+  },
+  {
+    id: 1,
+    label: 'Hit 2',
+    sampleName: 'Clap FX',
+    color: '#f472b6',
+    placed: false,
+    normX: 0.78,
+    normY: 0.36,
+    sourceType: 'synth',
+    synthSeed: 9202,
+    synthType: 'snare',
+  },
+  {
+    id: 2,
+    label: 'Hit 3',
+    sampleName: 'Pluck Stab',
+    color: '#a78bfa',
+    placed: false,
+    normX: 0.78,
+    normY: 0.50,
+    sourceType: 'synth',
+    synthSeed: 9303,
+    synthType: 'pluck',
+  },
+  {
+    id: 3,
+    label: 'Hit 4',
+    sampleName: 'Bell Chime',
+    color: '#34d399',
+    placed: false,
+    normX: 0.78,
+    normY: 0.64,
+    sourceType: 'synth',
+    synthSeed: 9404,
+    synthType: 'bell',
+  },
+  {
+    id: 4,
+    label: 'Hit 5',
+    sampleName: 'Crisp Hat',
+    color: '#fbbf24',
+    placed: false,
+    normX: 0.78,
+    normY: 0.78,
+    sourceType: 'synth',
+    synthSeed: 9505,
+    synthType: 'hat',
+  },
+  {
+    id: 5,
+    label: 'Hit 6',
+    sampleName: 'Synth Lead',
+    color: '#fb7185',
+    placed: false,
+    normX: 0.64,
+    normY: 0.50,
+    sourceType: 'synth',
+    synthSeed: 9606,
+    synthType: 'pluck',
+  },
+];

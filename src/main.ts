@@ -119,6 +119,8 @@ async function bootstrap(): Promise<void> {
   const countdownDesc = getEl<HTMLElement>('countdown-desc');
 
   const videoStage = getEl<HTMLElement>('video-stage');
+  const oneHitDock = getEl<HTMLElement>('one-hit-dock');
+  const inputOneHitFile = getEl<HTMLInputElement>('input-onehit-file');
   const hudFps = getEl<HTMLElement>('hud-fps');
   const hudHands = getEl<HTMLElement>('hud-hands');
   const hudStatus = document.getElementById('hud-status');
@@ -443,7 +445,218 @@ async function bootstrap(): Promise<void> {
       slot.sampleName = gen.label;
     }
     store.replaceSlots([...currentSlots]);
+
+    // Hydrate One-Hit Pads
+    const savedPads = await sampleStore.loadOneHitPadsMeta();
+    if (savedPads) {
+      store.replaceOneHitPads(savedPads);
+    }
+    const currentPads = store.getOneHitPads();
+    for (const pad of currentPads) {
+      if (pad.sourceType === 'custom') {
+        const stored = await sampleStore.loadOneHitCustomSample(pad.id);
+        if (stored) {
+          try {
+            const decoded = await audio.decodeAudio(stored.data);
+            audio.setOneHitBuffer(pad.id, decoded);
+            continue;
+          } catch {
+            // Fallback to default synth
+          }
+        }
+      }
+      await audio.assignSynthToOneHit(pad.id, pad.synthSeed, pad.synthType);
+      pad.sourceType = 'synth';
+    }
+    store.replaceOneHitPads([...currentPads]);
+    overlay.setOneHitPads(store.getOneHitPads());
+    renderOneHitDock();
   }
+
+  let activeOneHitUploadId: number | null = null;
+  let mouseDragPadId: number | null = null;
+  let mouseDownPos: { x: number; y: number } | null = null;
+  let mouseDidDrag = false;
+
+  function renderIdleOverlayIfPaused(): void {
+    if (!camera.isRunning()) {
+      overlay.render({ fingers: new Map(), rawHands: [] }, store.getSlots(), videoEl, performance.now());
+    }
+  }
+
+  function renderOneHitDock(): void {
+    oneHitDock.innerHTML = '';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'one-hit-dock-title';
+    titleEl.textContent = 'One-hits';
+    oneHitDock.appendChild(titleEl);
+
+    const pads = store.getOneHitPads();
+    for (const pad of pads) {
+      const box = document.createElement('div');
+      box.className = `one-hit-box${pad.placed ? ' placed' : ''}`;
+      box.dataset.padId = String(pad.id);
+
+      const topRow = document.createElement('div');
+      topRow.className = 'one-hit-box-top';
+
+      const lbl = document.createElement('span');
+      lbl.className = 'one-hit-box-label';
+      const dot = document.createElement('span');
+      dot.className = 'one-hit-dot';
+      dot.style.backgroundColor = pad.color;
+      lbl.appendChild(dot);
+      lbl.appendChild(document.createTextNode(pad.label));
+      topRow.appendChild(lbl);
+
+      if (pad.placed) {
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'one-hit-reset-btn';
+        resetBtn.title = 'Return to dock';
+        resetBtn.textContent = '×';
+        resetBtn.addEventListener('pointerdown', (ev) => {
+          ev.stopPropagation();
+        });
+        resetBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          store.updateOneHitPad(pad.id, { placed: false });
+          overlay.setOneHitPads(store.getOneHitPads());
+          void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
+          renderOneHitDock();
+          renderIdleOverlayIfPaused();
+        });
+        topRow.appendChild(resetBtn);
+      }
+
+      const sampleEl = document.createElement('div');
+      sampleEl.className = 'one-hit-box-sample';
+      sampleEl.textContent = pad.sampleName;
+
+      const hintEl = document.createElement('div');
+      hintEl.className = 'one-hit-box-hint';
+      hintEl.textContent = pad.placed ? 'On camera' : 'Drag or click';
+
+      box.appendChild(topRow);
+      box.appendChild(sampleEl);
+      box.appendChild(hintEl);
+
+      box.addEventListener('pointerdown', (ev) => {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        mouseDragPadId = pad.id;
+        mouseDownPos = { x: ev.clientX, y: ev.clientY };
+        mouseDidDrag = false;
+      });
+
+      oneHitDock.appendChild(box);
+    }
+  }
+
+  // Also allow mouse click / drag on placed One-Hit pads inside the camera stage
+  videoStage.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    if ((ev.target as HTMLElement).closest('#one-hit-dock, #start-overlay, button, input, select')) {
+      return;
+    }
+    const stageRect = videoStage.getBoundingClientRect();
+    const cx = ev.clientX - stageRect.left;
+    const cy = ev.clientY - stageRect.top;
+    const vp = overlay.getLastViewport(videoEl);
+    const pads = store.getOneHitPads();
+    for (let i = pads.length - 1; i >= 0; i--) {
+      const p = pads[i];
+      if (!p.placed) continue;
+      const b = overlay.getOneHitPadBounds(p, vp);
+      if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+        ev.preventDefault();
+        mouseDragPadId = p.id;
+        mouseDownPos = { x: ev.clientX, y: ev.clientY };
+        mouseDidDrag = false;
+        break;
+      }
+    }
+  });
+
+  window.addEventListener('pointermove', (ev) => {
+    if (mouseDragPadId === null || !mouseDownPos) return;
+    const dist = Math.hypot(ev.clientX - mouseDownPos.x, ev.clientY - mouseDownPos.y);
+    if (dist > 5) {
+      mouseDidDrag = true;
+    }
+    if (!mouseDidDrag) return;
+
+    const stageRect = videoStage.getBoundingClientRect();
+    const cx = ev.clientX - stageRect.left;
+    const cy = ev.clientY - stageRect.top;
+    const vp = overlay.getLastViewport(videoEl);
+
+    if (cx > stageRect.width - 108) {
+      store.updateOneHitPad(mouseDragPadId, { placed: false });
+      overlay.setGrabbedPadId(null);
+    } else {
+      const normX = Math.max(0.06, Math.min(0.94, (cx - vp.offsetX) / Math.max(1, vp.drawWidth)));
+      const normY = Math.max(0.06, Math.min(0.94, (cy - vp.offsetY) / Math.max(1, vp.drawHeight)));
+      store.updateOneHitPad(mouseDragPadId, { placed: true, normX, normY });
+      overlay.setGrabbedPadId(mouseDragPadId);
+    }
+    overlay.setOneHitPads(store.getOneHitPads());
+    renderIdleOverlayIfPaused();
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (mouseDragPadId === null) return;
+    const padId = mouseDragPadId;
+    const dragged = mouseDidDrag;
+    mouseDragPadId = null;
+    mouseDownPos = null;
+    mouseDidDrag = false;
+    overlay.setGrabbedPadId(null);
+
+    if (dragged) {
+      overlay.setOneHitPads(store.getOneHitPads());
+      void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
+      renderOneHitDock();
+      renderIdleOverlayIfPaused();
+    } else {
+      // Clicked without dragging -> open file dialog to load a one-shot sample into this pad
+      activeOneHitUploadId = padId;
+      inputOneHitFile.value = '';
+      inputOneHitFile.click();
+    }
+  });
+
+  inputOneHitFile.addEventListener('change', async () => {
+    const file = inputOneHitFile.files?.[0];
+    if (!file || activeOneHitUploadId === null) return;
+    const padId = activeOneHitUploadId;
+    activeOneHitUploadId = null;
+
+    try {
+      audio.ensureContext();
+      const buf = await file.arrayBuffer();
+      const decoded = await audio.decodeAudio(buf);
+      audio.setOneHitBuffer(padId, decoded);
+      await sampleStore.saveOneHitCustomSample(padId, file.name, file.type || 'audio/wav', buf);
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      store.updateOneHitPad(padId, {
+        sourceType: 'custom',
+        sampleName: cleanName,
+      });
+      await sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
+      overlay.setOneHitPads(store.getOneHitPads());
+      renderOneHitDock();
+      renderIdleOverlayIfPaused();
+      audio.triggerOneHit(padId, 0.9);
+      overlay.showToast(`Loaded: ${cleanName}`, '#38bdf8');
+    } catch (err) {
+      console.error('One-hit ses yükleme hatası:', err);
+      overlay.showToast('Audio decode failed', '#f87171');
+    }
+  });
+
+  overlay.setOneHitPads(store.getOneHitPads());
+  renderOneHitDock();
 
   let audioHydrated = false;
   let hydratingPromise: Promise<void> | null = null;
@@ -574,6 +787,9 @@ async function bootstrap(): Promise<void> {
       let prevPalmL: { x: number; y: number } | null = null;
       let metroZoneArmed = true;
       let lastMetroToggleMs = 0;
+      let handGrabbedPadId: number | null = null;
+      const padInsidePrevFrame = new Set<number>();
+      const lastPadTriggerMs = new Map<number, number>();
 
       camera.startFrameLoop((nowMs, video) => {
         // FPS calculation
@@ -609,11 +825,25 @@ async function bootstrap(): Promise<void> {
 
         for (const rawHand of mapped.rawHands) {
           const handKey = rawHand.hand;
-          const { gestureState, swipe, pointerModeToggled } = gestureDetector.process(
+          const { gestureState, swipe, pointerModeToggled, rightPadModeToggled } = gestureDetector.process(
             handKey,
             rawHand.landmarks,
             nowMs
           );
+
+          if (handKey === 'R' && rightPadModeToggled) {
+            const isRightPad = gestureDetector.isRightPadMode();
+            overlay.setRightPadMode(isRightPad);
+            if (isRightPad) {
+              theremin.silence();
+              overlay.setThereminState(null);
+              overlay.showToast('One-hit mode (5 fingers)', '#38bdf8');
+            } else {
+              handGrabbedPadId = null;
+              overlay.setGrabbedPadId(null);
+              overlay.showToast('Theremin mode', '#f8fafc');
+            }
+          }
 
           if (handKey === 'L') {
             if (pointerModeToggled) {
@@ -709,26 +939,114 @@ async function bootstrap(): Promise<void> {
 
           if (settings.appMode === 'theremin' && rawHand.hand === 'R') {
             rightHandDetected = true;
-            const tRes = theremin.updateGesture(
-              gestureState.clenchRatio,
-              gestureState.palmCenter.x,
-              gestureState.palmCenter.y
-            );
-            if (tRes.active && tRes.volume >= 0.15) {
-              airLooper.markSynthActive();
+            if (gestureDetector.isRightPadMode()) {
+              theremin.silence();
+              overlay.setThereminState(null);
+
+              // Right-hand 5-finger One-Hit Pad Control (Drag with pinch, Play by touching with fingers)
+              const lms = rawHand.landmarks;
+              const vp = overlay.getLastViewport(video);
+              const halfNormW = 48 / Math.max(1, vp.drawWidth);
+              const halfNormH = 26 / Math.max(1, vp.drawHeight);
+
+              const thumbTip = lms[4];
+              const indexTip = lms[8];
+              const pinchDist =
+                thumbTip && indexTip
+                  ? Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y)
+                  : 1;
+              const pinchMidX = thumbTip && indexTip ? (thumbTip.x + indexTip.x) * 0.5 : 0.5;
+              const pinchMidY = thumbTip && indexTip ? (thumbTip.y + indexTip.y) * 0.5 : 0.5;
+
+              const currentPads = store.getOneHitPads();
+
+              if (handGrabbedPadId !== null) {
+                if (pinchDist < 0.095) {
+                  const nx = Math.max(0.06, Math.min(0.94, pinchMidX));
+                  const ny = Math.max(0.06, Math.min(0.94, pinchMidY));
+                  store.updateOneHitPad(handGrabbedPadId, { normX: nx, normY: ny });
+                  overlay.setOneHitPads(store.getOneHitPads());
+                } else {
+                  handGrabbedPadId = null;
+                  overlay.setGrabbedPadId(null);
+                  void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
+                }
+              } else if (pinchDist < 0.065) {
+                for (let i = currentPads.length - 1; i >= 0; i--) {
+                  const pad = currentPads[i];
+                  if (!pad.placed) continue;
+                  if (
+                    Math.abs(pinchMidX - pad.normX) <= halfNormW * 1.15 &&
+                    Math.abs(pinchMidY - pad.normY) <= halfNormH * 1.15
+                  ) {
+                    handGrabbedPadId = pad.id;
+                    overlay.setGrabbedPadId(pad.id);
+                    break;
+                  }
+                }
+              }
+
+              // If not dragging a pad and palm is not closed for mode-toggle, check 5-finger touch on placed pads
+              if (handGrabbedPadId === null && !gestureState.isClosed && gestureState.clenchRatio < 0.42) {
+                const tipIndices = [4, 8, 12, 16, 20];
+                let hoveredId: number | null = null;
+                for (const pad of currentPads) {
+                  if (!pad.placed) {
+                    padInsidePrevFrame.delete(pad.id);
+                    continue;
+                  }
+                  let anyFingerInside = false;
+                  for (const tIdx of tipIndices) {
+                    const tip = lms[tIdx];
+                    if (!tip) continue;
+                    if (
+                      Math.abs(tip.x - pad.normX) <= halfNormW &&
+                      Math.abs(tip.y - pad.normY) <= halfNormH
+                    ) {
+                      anyFingerInside = true;
+                      hoveredId = pad.id;
+                      break;
+                    }
+                  }
+                  const wasInside = padInsidePrevFrame.has(pad.id);
+                  if (anyFingerInside) {
+                    const lastTrig = lastPadTriggerMs.get(pad.id) ?? 0;
+                    if (!wasInside && nowMs - lastTrig > 190) {
+                      lastPadTriggerMs.set(pad.id, nowMs);
+                      audio.triggerOneHit(pad.id, 0.95);
+                      overlay.triggerOneHitFlash(pad.id, nowMs);
+                    }
+                    padInsidePrevFrame.add(pad.id);
+                  } else {
+                    padInsidePrevFrame.delete(pad.id);
+                  }
+                }
+                overlay.setHoveredPadId(hoveredId);
+              } else {
+                overlay.setHoveredPadId(null);
+              }
+            } else {
+              const tRes = theremin.updateGesture(
+                gestureState.clenchRatio,
+                gestureState.palmCenter.x,
+                gestureState.palmCenter.y
+              );
+              if (tRes.active && tRes.volume >= 0.15) {
+                airLooper.markSynthActive();
+              }
+              const tState: ThereminState = {
+                active: tRes.active,
+                pitchHz: tRes.frequency,
+                noteName: tRes.noteName,
+                volume: tRes.volume,
+                brightness: tRes.brightness,
+                handX: gestureState.palmCenter.x,
+                handY: gestureState.palmCenter.y,
+                clenchRatio: gestureState.clenchRatio,
+              };
+              overlay.setThereminState(tState);
+              store.emit('thereminUpdate', tState);
             }
-            const tState: ThereminState = {
-              active: tRes.active,
-              pitchHz: tRes.frequency,
-              noteName: tRes.noteName,
-              volume: tRes.volume,
-              brightness: tRes.brightness,
-              handX: gestureState.palmCenter.x,
-              handY: gestureState.palmCenter.y,
-              clenchRatio: gestureState.clenchRatio,
-            };
-            overlay.setThereminState(tState);
-            store.emit('thereminUpdate', tState);
           }
         }
 
@@ -775,6 +1093,8 @@ async function bootstrap(): Promise<void> {
 
         overlay.setAppMode(settings.appMode);
         overlay.setLeftPointerMode(gestureDetector.isLeftPointerMode());
+        overlay.setRightPadMode(gestureDetector.isRightPadMode());
+        overlay.setOneHitPads(store.getOneHitPads());
         overlay.setStreakPoints(gestureDetector.getStreakPoints(nowMs));
         overlay.setLooperStatus(airLooper.getStatus());
         overlay.setLivePhraseMetrics(airLooper.getLivePhraseMetrics());
@@ -794,8 +1114,30 @@ async function bootstrap(): Promise<void> {
           nowMs < leftLockoutUntilMs;
 
         for (const tap of taps) {
-          // In theremin mode, right hand taps are ignored so right hand is exclusively Theremin
           if (settings.appMode === 'theremin' && tap.fingerId >= 5) {
+            if (gestureDetector.isRightPadMode() && handGrabbedPadId === null) {
+              const fData = mapped.fingers.get(tap.fingerId);
+              if (fData) {
+                const vp = overlay.getLastViewport(video);
+                const halfNormW = 52 / Math.max(1, vp.drawWidth);
+                const halfNormH = 30 / Math.max(1, vp.drawHeight);
+                for (const pad of store.getOneHitPads()) {
+                  if (!pad.placed) continue;
+                  if (
+                    Math.abs(fData.tip.x - pad.normX) <= halfNormW &&
+                    Math.abs(fData.tip.y - pad.normY) <= halfNormH
+                  ) {
+                    const lastTrig = lastPadTriggerMs.get(pad.id) ?? 0;
+                    if (nowMs - lastTrig > 140) {
+                      lastPadTriggerMs.set(pad.id, nowMs);
+                      audio.triggerOneHit(pad.id, tap.velocity);
+                      overlay.triggerOneHitFlash(pad.id, nowMs);
+                    }
+                    break;
+                  }
+                }
+              }
+            }
             continue;
           }
           // Suppress accidental drum taps when left hand is in pointer mode, closing palm, or rapid motion

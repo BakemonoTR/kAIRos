@@ -35,6 +35,12 @@ export class GestureDetector {
   private lCloseStartMs = 0;
   private lastLeftPointerToggleMs = 0;
 
+  // Right-hand 5-finger One-Hit pad mode ("Sağ el avuç kapatıp açınca 5 parmaklı One-Hit moduna geçiş")
+  private rightPadMode = false;
+  private rPendingToggleClose = false;
+  private rCloseStartMs = 0;
+  private lastRightPadToggleMs = 0;
+
   private rHistory: PointHistoryItem[] = [];
   private lHistory: PointHistoryItem[] = [];
 
@@ -62,6 +68,10 @@ export class GestureDetector {
     this.lPendingToggleClose = false;
     this.lCloseStartMs = 0;
     this.lastLeftPointerToggleMs = 0;
+    this.rightPadMode = false;
+    this.rPendingToggleClose = false;
+    this.rCloseStartMs = 0;
+    this.lastRightPadToggleMs = 0;
     this.rHistory = [];
     this.lHistory = [];
     this.leftWallArmed = false;
@@ -79,6 +89,14 @@ export class GestureDetector {
 
   setLeftPointerMode(enabled: boolean): void {
     this.leftPointerMode = enabled;
+  }
+
+  isRightPadMode(): boolean {
+    return this.rightPadMode;
+  }
+
+  setRightPadMode(enabled: boolean): void {
+    this.rightPadMode = enabled;
   }
 
   private dist3D(a: Point3D, b: Point3D): number {
@@ -183,6 +201,7 @@ export class GestureDetector {
     gestureState: HandGestureState;
     swipe: SwipeEvent | null;
     pointerModeToggled: boolean;
+    rightPadModeToggled: boolean;
   } {
     const { palmCenter, handScale } = this.computeHandGeometry(landmarks);
     const rawClench = this.computeClenchRatio(landmarks);
@@ -191,16 +210,49 @@ export class GestureDetector {
     let smoothed: number;
     let isClosed: boolean;
     let pointerModeToggled = false;
+    let rightPadModeToggled = false;
 
     if (isRight) {
-      this.rClenchSmoothed = this.rClenchSmoothed * 0.65 + rawClench * 0.35;
+      this.rClenchSmoothed = this.rClenchSmoothed * 0.55 + rawClench * 0.45;
       smoothed = this.rClenchSmoothed;
       if (this.rIsClosed) {
         if (smoothed < 0.38) this.rIsClosed = false;
       } else {
-        if (smoothed > 0.52) this.rIsClosed = true;
+        if (smoothed > 0.50) this.rIsClosed = true;
       }
       isClosed = this.rIsClosed;
+
+      // Detect Right Hand Palm Close -> Open cycle ("sağ elimi avucumu açıp kapatınca bu moda geçiş yapsın")
+      const indexTip = landmarks[8] ?? palmCenter;
+      const indexDistRatio = this.dist3D(indexTip, palmCenter) / handScale;
+      const indexCurl =
+        landmarks.length >= 21
+          ? this.computeJointCurl(landmarks[5], landmarks[6], landmarks[8])
+          : 0;
+      const isIndexCurled = indexCurl > 0.38 || indexDistRatio < 0.95;
+      const maxCloseMs = this.rightPadMode ? 2500 : 750;
+
+      if (this.rIsClosed && isIndexCurled) {
+        if (!this.rPendingToggleClose) {
+          this.rPendingToggleClose = true;
+          this.rCloseStartMs = nowMs;
+        } else if (nowMs - this.rCloseStartMs > maxCloseMs) {
+          this.rPendingToggleClose = false;
+        }
+      } else if (!this.rIsClosed && this.rPendingToggleClose) {
+        const closedDuration = nowMs - this.rCloseStartMs;
+        this.rPendingToggleClose = false;
+        if (
+          closedDuration >= 20 &&
+          closedDuration <= maxCloseMs &&
+          nowMs - this.lastRightPadToggleMs > 300
+        ) {
+          this.rightPadMode = !this.rightPadMode;
+          this.lastRightPadToggleMs = nowMs;
+          this.lastRightWallTime = nowMs;
+          rightPadModeToggled = true;
+        }
+      }
     } else {
       this.lClenchSmoothed = this.lClenchSmoothed * 0.50 + rawClench * 0.50;
       smoothed = this.lClenchSmoothed;
@@ -322,6 +374,7 @@ export class GestureDetector {
         nowMs - this.lastRSwipeTime > this.wallCooldownMs &&
         nowMs - this.lastRightWallTime > this.wallCooldownMs;
       if (
+        !this.rightPadMode &&
         this.rightWallArmed &&
         !isRightArmLeading &&
         handCoreX >= 0.87 &&
@@ -386,8 +439,8 @@ export class GestureDetector {
           if (Math.abs(vX) > Math.abs(peakVelX)) peakVelX = vX;
           if (vY > peakVelY) peakVelY = vY;
 
-          // Downward Preset Swipe: Right hand moving DOWN with open hand
-          if (isRight && smoothed < 0.42 && !isClosed && dy >= 0.075 && vY >= 0.55) {
+          // Downward Preset Swipe: Right hand moving DOWN with open hand (disabled in 5-finger One-Hit pad mode)
+          if (isRight && !this.rightPadMode && smoothed < 0.42 && !isClosed && dy >= 0.075 && vY >= 0.55) {
             isDownwardPresetSwipe = true;
           }
         }
@@ -419,7 +472,7 @@ export class GestureDetector {
       velocityY: velY,
     };
 
-    return { gestureState, swipe, pointerModeToggled };
+    return { gestureState, swipe, pointerModeToggled, rightPadModeToggled };
   }
 
   private addStreakPoints(history: PointHistoryItem[], color: string, nowMs: number): void {

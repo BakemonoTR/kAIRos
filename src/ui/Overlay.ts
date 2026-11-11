@@ -5,6 +5,7 @@ import {
   LivePhraseMetrics,
   LooperStatus,
   MappedHandsResult,
+  OneHitPadData,
   SlotData,
   ThereminState,
 } from '../types';
@@ -68,6 +69,11 @@ export class Overlay {
   private metronomeState: MetronomeState | null = null;
   private metroFlashMs = 0;
   private leftPointerMode = false;
+  private rightPadMode = false;
+  private oneHitPads: OneHitPadData[] = [];
+  private oneHitFlashes = new Map<number, number>();
+  private grabbedPadId: number | null = null;
+  private hoveredPadId: number | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -82,6 +88,56 @@ export class Overlay {
 
   isLeftPointerMode(): boolean {
     return this.leftPointerMode;
+  }
+
+  setRightPadMode(enabled: boolean): void {
+    this.rightPadMode = enabled;
+  }
+
+  isRightPadMode(): boolean {
+    return this.rightPadMode;
+  }
+
+  setOneHitPads(pads: OneHitPadData[]): void {
+    this.oneHitPads = pads;
+  }
+
+  setGrabbedPadId(id: number | null): void {
+    this.grabbedPadId = id;
+  }
+
+  setHoveredPadId(id: number | null): void {
+    this.hoveredPadId = id;
+  }
+
+  triggerOneHitFlash(padId: number, nowMs = performance.now()): void {
+    this.oneHitFlashes.set(padId, nowMs);
+  }
+
+  getOneHitPadBounds(
+    pad: OneHitPadData,
+    vp: RenderViewport
+  ): { x: number; y: number; w: number; h: number } {
+    const w = 96;
+    const h = 52;
+    const cx = vp.offsetX + pad.normX * vp.drawWidth;
+    const cy = vp.offsetY + pad.normY * vp.drawHeight;
+    return {
+      x: cx - w / 2,
+      y: cy - h / 2,
+      w,
+      h,
+    };
+  }
+
+  getLastViewport(video: HTMLVideoElement): RenderViewport {
+    const rect = this.canvas.getBoundingClientRect();
+    return this.computeContainViewport(
+      rect.width,
+      rect.height,
+      video.videoWidth,
+      video.videoHeight
+    );
   }
 
   setAppMode(mode: AppMode): void {
@@ -161,13 +217,15 @@ export class Overlay {
     videoW: number,
     videoH: number
   ): RenderViewport {
+    const dockReserveW = 112;
+    const availW = Math.max(120, containerW - dockReserveW);
     if (!videoW || !videoH) {
-      return { offsetX: 0, offsetY: 0, drawWidth: containerW, drawHeight: containerH };
+      return { offsetX: 0, offsetY: 0, drawWidth: availW, drawHeight: containerH };
     }
-    const containerRatio = containerW / containerH;
+    const containerRatio = availW / containerH;
     const videoRatio = videoW / videoH;
 
-    let drawWidth = containerW;
+    let drawWidth = availW;
     let drawHeight = containerH;
     let offsetX = 0;
     let offsetY = 0;
@@ -175,9 +233,9 @@ export class Overlay {
     if (containerRatio > videoRatio) {
       drawHeight = containerH;
       drawWidth = drawHeight * videoRatio;
-      offsetX = (containerW - drawWidth) / 2;
+      offsetX = (availW - drawWidth) / 2;
     } else {
-      drawWidth = containerW;
+      drawWidth = availW;
       drawHeight = drawWidth / videoRatio;
       offsetY = (containerH - drawHeight) / 2;
     }
@@ -228,12 +286,16 @@ export class Overlay {
 
     this.ripples = this.ripples.filter((r) => nowMs - r.startedAt < 340);
 
+    // 0. Placed One-Hit Pads on Camera
+    this.drawOneHitPads(ctx, vp, nowMs);
+
     // 1. Subtle hand skeleton lines
     for (const handObj of mapped.rawHands) {
       const lms = handObj.landmarks;
       const isRightHand = handObj.hand === 'R';
       const isLeftPointer = handObj.hand === 'L' && this.leftPointerMode;
-      const isThereminRight = this.appMode === 'theremin' && isRightHand;
+      const isRightPadControl = isRightHand && this.appMode === 'theremin' && this.rightPadMode;
+      const isThereminRight = this.appMode === 'theremin' && isRightHand && !this.rightPadMode;
 
       ctx.save();
       if (isLeftPointer) {
@@ -254,8 +316,12 @@ export class Overlay {
           ctx.fill();
         }
       } else {
-        ctx.strokeStyle = isThereminRight ? 'rgba(129, 140, 248, 0.45)' : 'rgba(148, 163, 184, 0.35)';
-        ctx.lineWidth = isThereminRight ? 2.5 : 2;
+        ctx.strokeStyle = isRightPadControl
+          ? 'rgba(56, 189, 248, 0.72)'
+          : isThereminRight
+            ? 'rgba(129, 140, 248, 0.45)'
+            : 'rgba(148, 163, 184, 0.35)';
+        ctx.lineWidth = isRightPadControl || isThereminRight ? 2.5 : 2;
         ctx.beginPath();
         for (const [a, b] of HAND_CONNECTIONS) {
           ctx.moveTo(toX(lms[a].x), toY(lms[a].y));
@@ -263,7 +329,11 @@ export class Overlay {
         }
         ctx.stroke();
 
-        ctx.fillStyle = isThereminRight ? 'rgba(165, 180, 252, 0.6)' : 'rgba(226, 232, 240, 0.45)';
+        ctx.fillStyle = isRightPadControl
+          ? 'rgba(56, 189, 248, 0.85)'
+          : isThereminRight
+            ? 'rgba(165, 180, 252, 0.6)'
+            : 'rgba(226, 232, 240, 0.45)';
         for (let i = 0; i < lms.length; i++) {
           if (i === 4 || i === 8 || i === 12 || i === 16 || i === 20) continue;
           ctx.beginPath();
@@ -277,6 +347,19 @@ export class Overlay {
     // 2. Fingertip colored dots + labels + hit ripples
     for (const [fingerId, fData] of mapped.fingers.entries()) {
       if (this.appMode === 'theremin' && fingerId >= 5) {
+        if (!this.rightPadMode) continue;
+        // Sağ el 5-parmak One-Hit kontrol modunda 5 parmak ucu noktası çizilir
+        const x = toX(fData.tip.x);
+        const y = toY(fData.tip.y);
+        ctx.save();
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#07090d';
+        ctx.stroke();
+        ctx.restore();
         continue;
       }
 
@@ -365,7 +448,7 @@ export class Overlay {
     }
 
     // 3. Theremin Mode Visuals (Right Hand Energy Orb & Pitch Axis)
-    if (this.appMode === 'theremin' && this.thereminState) {
+    if (this.appMode === 'theremin' && this.thereminState && !this.rightPadMode) {
       this.drawThereminVisuals(ctx, vp, this.thereminState, nowMs);
     }
 
@@ -654,13 +737,69 @@ export class Overlay {
     } else {
       this.drawDigitalText(
         ctx,
-        'Synth',
+        this.rightPadMode ? 'One-hit pads   5-finger mode' : 'Synth',
         xRight,
         y,
         13,
-        mutedColor,
+        this.rightPadMode ? '#38bdf8' : mutedColor,
         'right'
       );
+    }
+  }
+
+  private drawOneHitPads(
+    ctx: CanvasRenderingContext2D,
+    vp: RenderViewport,
+    nowMs: number
+  ): void {
+    for (const pad of this.oneHitPads) {
+      if (!pad.placed) continue;
+      const { x, y, w, h } = this.getOneHitPadBounds(pad, vp);
+      const lastFlash = this.oneHitFlashes.get(pad.id) ?? 0;
+      const flashElapsed = nowMs - lastFlash;
+      const isFlashing = flashElapsed >= 0 && flashElapsed < 220;
+      const isGrabbed = this.grabbedPadId === pad.id;
+      const isHovered = this.hoveredPadId === pad.id;
+
+      ctx.save();
+
+      // Background
+      ctx.fillStyle = isFlashing
+        ? 'rgba(30, 41, 59, 0.92)'
+        : isGrabbed
+          ? 'rgba(23, 37, 84, 0.88)'
+          : 'rgba(15, 18, 24, 0.82)';
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 7);
+      ctx.fill();
+
+      // Border
+      ctx.lineWidth = isFlashing || isGrabbed ? 2.2 : isHovered ? 1.6 : 1.2;
+      ctx.strokeStyle = isFlashing || isGrabbed || isHovered
+        ? pad.color
+        : 'rgba(226, 232, 240, 0.32)';
+      ctx.stroke();
+
+      // Top color accent strip
+      ctx.fillStyle = pad.color;
+      ctx.beginPath();
+      ctx.roundRect(x + 8, y + 6, 18, 3, 1.5);
+      ctx.fill();
+
+      // Pad label & sample name
+      this.drawDigitalText(ctx, pad.label, x + 32, y + 14, 10.5, 'rgba(226, 232, 240, 0.72)', 'left');
+      const shortName = pad.sampleName.length > 12 ? `${pad.sampleName.slice(0, 11)}…` : pad.sampleName;
+      this.drawDigitalText(
+        ctx,
+        isGrabbed ? 'Moving...' : shortName,
+        x + w / 2,
+        y + 34,
+        11.5,
+        isFlashing ? '#ffffff' : '#f1f5f9',
+        'center'
+      );
+
+      ctx.restore();
     }
   }
 

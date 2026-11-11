@@ -180,10 +180,120 @@ body {
 }
 
 #webcam {
-  width: 100%;
+  width: calc(100% - 112px);
   height: 100%;
+  margin-right: 112px;
   object-fit: contain;
   transform: scaleX(-1);
+}
+
+.one-hit-dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 112px;
+  background: #07090d;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 9px;
+  z-index: 6;
+  user-select: none;
+}
+
+.one-hit-dock-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.one-hit-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 7px 8px;
+  min-height: 52px;
+  border-radius: 6px;
+  background: #14171d;
+  border: 1px solid rgba(226, 232, 240, 0.2);
+  cursor: grab;
+  transition: border-color 0.12s, background 0.12s, opacity 0.12s;
+  touch-action: none;
+}
+
+.one-hit-box:hover {
+  border-color: rgba(226, 232, 240, 0.55);
+  background: #1b1f27;
+}
+
+.one-hit-box:active {
+  cursor: grabbing;
+}
+
+.one-hit-box.placed {
+  background: rgba(20, 23, 29, 0.55);
+  border-style: dashed;
+}
+
+.one-hit-box-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.one-hit-box-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.one-hit-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.one-hit-reset-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.one-hit-reset-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.one-hit-box-sample {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 3px;
+}
+
+.one-hit-box-hint {
+  font-size: 0.63rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 
 #overlay-canvas {
