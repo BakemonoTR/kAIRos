@@ -294,12 +294,52 @@ export class Overlay {
     for (const handObj of mapped.rawHands) {
       const lms = handObj.landmarks;
       const isRightHand = handObj.hand === 'R';
-      const isLeftPointer = handObj.hand === 'L' && this.leftPointerMode;
+      const isLeftResizing = !isRightHand && this.grabbedPadId !== null;
+      const isLeftPointer = handObj.hand === 'L' && this.leftPointerMode && !isLeftResizing;
       const isRightPadControl = isRightHand && this.appMode === 'theremin' && this.rightPadMode;
       const isThereminRight = this.appMode === 'theremin' && isRightHand && !this.rightPadMode;
 
       ctx.save();
-      if (isLeftPointer) {
+      if (isLeftResizing) {
+        // Sağ el bir kutucuğu tutarken sol elde drum ve pointer modu devre dışı: SADECE başparmak ve işaret parmağı (Zoom) çizilir
+        const zoomConnections: Array<[number, number]> = [
+          [0, 1], [1, 2], [2, 3], [3, 4],
+          [0, 5], [5, 6], [6, 7], [7, 8],
+        ];
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (const [a, b] of zoomConnections) {
+          ctx.moveTo(toX(lms[a].x), toY(lms[a].y));
+          ctx.lineTo(toX(lms[b].x), toY(lms[b].y));
+        }
+        ctx.stroke();
+
+        if (lms[4] && lms[8]) {
+          const grabbedPad = this.oneHitPads.find((p) => p.id === this.grabbedPadId);
+          const pct = Math.round((grabbedPad?.scale ?? 1.0) * 100);
+          const x4 = toX(lms[4].x);
+          const y4 = toY(lms[4].y);
+          const x8 = toX(lms[8].x);
+          const y8 = toY(lms[8].y);
+
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(x4, y4, 6, 0, Math.PI * 2);
+          ctx.arc(x8, y8, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(x4, y4);
+          ctx.lineTo(x8, y8);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          this.drawDigitalText(ctx, `Size ${pct}%`, (x4 + x8) * 0.5, (y4 + y8) * 0.5 - 14, 11.5, '#38bdf8', 'center');
+        }
+      } else if (isLeftPointer) {
         // Tek parmaklı dokunma modu: SADECE sol işaret parmağında kemik ve eklem çizilir
         ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
         ctx.lineWidth = 2.5;
@@ -343,30 +383,15 @@ export class Overlay {
         }
       }
 
-      // Sağ el bir One-Hit kutucuğunu tutarken sol el başparmak ve işaret parmağı arasında Zoom çizgisi çiz
-      if (!isRightHand && this.grabbedPadId !== null && lms[4] && lms[8]) {
-        const grabbedPad = this.oneHitPads.find((p) => p.id === this.grabbedPadId);
-        const pct = Math.round(((grabbedPad?.scale ?? 1.0) * 100));
-        const x4 = toX(lms[4].x);
-        const y4 = toY(lms[4].y);
-        const x8 = toX(lms[8].x);
-        const y8 = toY(lms[8].y);
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(x4, y4);
-        ctx.lineTo(x8, y8);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        this.drawDigitalText(ctx, `Size ${pct}%`, (x4 + x8) * 0.5, (y4 + y8) * 0.5 - 12, 11, '#38bdf8', 'center');
-      }
-
       ctx.restore();
     }
 
     // 2. Fingertip colored dots + labels + hit ripples
     for (const [fingerId, fData] of mapped.fingers.entries()) {
+      // Sağ el kutucuk tutarken sol eldeki drum ve pointer noktalarını tamamen devre dışı bırak
+      if (this.grabbedPadId !== null && fingerId < 5) {
+        continue;
+      }
       if (this.appMode === 'theremin' && fingerId >= 5) {
         if (!this.rightPadMode) continue;
         // Sağ el 5-parmak One-Hit kontrol modunda 5 parmak ucu noktası çizilir

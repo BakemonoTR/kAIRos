@@ -89,6 +89,12 @@ export class GestureDetector {
 
   setLeftPointerMode(enabled: boolean): void {
     this.leftPointerMode = enabled;
+    this.lPendingToggleClose = false;
+  }
+
+  cancelLeftPointerToggle(): void {
+    this.lPendingToggleClose = false;
+    this.leftWallArmed = false;
   }
 
   isRightPadMode(): boolean {

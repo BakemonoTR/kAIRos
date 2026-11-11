@@ -833,6 +833,9 @@ async function bootstrap(): Promise<void> {
 
         for (const rawHand of mapped.rawHands) {
           const handKey = rawHand.hand;
+          if (handKey === 'L' && (handGrabbedPadId !== null || nowMs < leftLockoutUntilMs)) {
+            gestureDetector.cancelLeftPointerToggle();
+          }
           if (handKey === 'R' && gestureDetector.isRightPadMode()) {
             const lms = rawHand.landmarks;
             const vp = overlay.getLastViewport(video);
@@ -881,7 +884,10 @@ async function bootstrap(): Promise<void> {
           }
 
           if (handKey === 'L') {
-            if (pointerModeToggled) {
+            if (handGrabbedPadId !== null) {
+              gestureDetector.cancelLeftPointerToggle();
+              leftLockoutUntilMs = nowMs + 450;
+            } else if (pointerModeToggled && nowMs >= leftLockoutUntilMs) {
               const isPointer = gestureDetector.isLeftPointerMode();
               overlay.setLeftPointerMode(isPointer);
               leftLockoutUntilMs = nowMs + 350;
@@ -947,7 +953,13 @@ async function bootstrap(): Promise<void> {
                   }
                   refreshLooperUi();
                 }
-              } else if (swipe.hand === 'L' && swipe.direction === 'left' && !gestureDetector.isLeftPointerMode()) {
+              } else if (
+                swipe.hand === 'L' &&
+                swipe.direction === 'left' &&
+                !gestureDetector.isLeftPointerMode() &&
+                handGrabbedPadId === null &&
+                nowMs >= leftLockoutUntilMs
+              ) {
                 // Wall bump / swipe to the left on left hand
                 overlay.triggerWallBump('L', nowMs);
                 leftLockoutUntilMs = nowMs + 280; // Lockout to prevent post-bump tap noise
@@ -1131,7 +1143,7 @@ async function bootstrap(): Promise<void> {
         let isHandInMetroZone = false;
         let isHandNearMetroZone = false;
 
-        if (gestureDetector.isLeftPointerMode()) {
+        if (gestureDetector.isLeftPointerMode() && handGrabbedPadId === null && nowMs >= leftLockoutUntilMs) {
           for (const rawHand of mapped.rawHands) {
             if (rawHand.hand !== 'L') continue;
             const tip = rawHand.landmarks[8]; // Sadece sol işaret parmağı ucu
