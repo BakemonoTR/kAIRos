@@ -97,6 +97,11 @@ export class GestureDetector {
 
   setRightPadMode(enabled: boolean): void {
     this.rightPadMode = enabled;
+    this.rPendingToggleClose = false;
+  }
+
+  cancelRightPadToggle(): void {
+    this.rPendingToggleClose = false;
   }
 
   private dist3D(a: Point3D, b: Point3D): number {
@@ -222,36 +227,44 @@ export class GestureDetector {
       }
       isClosed = this.rIsClosed;
 
-      // Detect Right Hand Palm Close -> Open cycle ("sağ elimi avucumu açıp kapatınca bu moda geçiş yapsın")
-      const indexTip = landmarks[8] ?? palmCenter;
-      const indexDistRatio = this.dist3D(indexTip, palmCenter) / handScale;
-      const indexCurl =
-        landmarks.length >= 21
-          ? this.computeJointCurl(landmarks[5], landmarks[6], landmarks[8])
-          : 0;
-      const isIndexCurled = indexCurl > 0.38 || indexDistRatio < 0.95;
-      const maxCloseMs = this.rightPadMode ? 2500 : 750;
+      // Detect Right Hand Full Palm Close -> Open cycle ("sağ elimi avucumu açıp kapatınca bu moda geçiş yapsın")
+      // Require ALL 4 fingers (index, middle, ring, pinky) to be tightly closed into the palm (rawClench >= 0.78)
+      // so pinching or pressing a One-Hit button never false-triggers a mode switch.
+      const t8 = landmarks[8] ?? palmCenter;
+      const t12 = landmarks[12] ?? palmCenter;
+      const t16 = landmarks[16] ?? palmCenter;
+      const t20 = landmarks[20] ?? palmCenter;
+      const allFourCurledIn =
+        this.dist3D(t8, palmCenter) / handScale < 0.85 &&
+        this.dist3D(t12, palmCenter) / handScale < 0.85 &&
+        this.dist3D(t16, palmCenter) / handScale < 0.85 &&
+        this.dist3D(t20, palmCenter) / handScale < 0.85;
+      const isFullPalmClosed = rawClench >= 0.78 && smoothed >= 0.60 && allFourCurledIn;
+      const isFullPalmOpen = rawClench <= 0.22 && smoothed <= 0.30;
+      const maxCloseMs = this.rightPadMode ? 1800 : 700;
 
-      if (this.rIsClosed && isIndexCurled) {
+      if (isFullPalmClosed) {
         if (!this.rPendingToggleClose) {
           this.rPendingToggleClose = true;
           this.rCloseStartMs = nowMs;
         } else if (nowMs - this.rCloseStartMs > maxCloseMs) {
           this.rPendingToggleClose = false;
         }
-      } else if (!this.rIsClosed && this.rPendingToggleClose) {
+      } else if (isFullPalmOpen && this.rPendingToggleClose) {
         const closedDuration = nowMs - this.rCloseStartMs;
         this.rPendingToggleClose = false;
         if (
-          closedDuration >= 20 &&
+          closedDuration >= 30 &&
           closedDuration <= maxCloseMs &&
-          nowMs - this.lastRightPadToggleMs > 300
+          nowMs - this.lastRightPadToggleMs > 450
         ) {
           this.rightPadMode = !this.rightPadMode;
           this.lastRightPadToggleMs = nowMs;
           this.lastRightWallTime = nowMs;
           rightPadModeToggled = true;
         }
+      } else if (this.rPendingToggleClose && nowMs - this.rCloseStartMs > maxCloseMs) {
+        this.rPendingToggleClose = false;
       }
     } else {
       this.lClenchSmoothed = this.lClenchSmoothed * 0.50 + rawClench * 0.50;
@@ -374,7 +387,6 @@ export class GestureDetector {
         nowMs - this.lastRSwipeTime > this.wallCooldownMs &&
         nowMs - this.lastRightWallTime > this.wallCooldownMs;
       if (
-        !this.rightPadMode &&
         this.rightWallArmed &&
         !isRightArmLeading &&
         handCoreX >= 0.87 &&

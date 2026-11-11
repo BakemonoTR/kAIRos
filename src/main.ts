@@ -591,14 +591,22 @@ async function bootstrap(): Promise<void> {
     const cy = ev.clientY - stageRect.top;
     const vp = overlay.getLastViewport(videoEl);
 
-    if (cx > stageRect.width - 108) {
+    const isOutsideCamera =
+      cx > vp.offsetX + vp.drawWidth - 18 ||
+      cx < vp.offsetX - 12 ||
+      cy < vp.offsetY - 12 ||
+      cy > vp.offsetY + vp.drawHeight + 12;
+
+    if (isOutsideCamera) {
       store.updateOneHitPad(mouseDragPadId, { placed: false });
       overlay.setGrabbedPadId(null);
+      renderOneHitDock();
     } else {
       const normX = Math.max(0.06, Math.min(0.94, (cx - vp.offsetX) / Math.max(1, vp.drawWidth)));
       const normY = Math.max(0.06, Math.min(0.94, (cy - vp.offsetY) / Math.max(1, vp.drawHeight)));
       store.updateOneHitPad(mouseDragPadId, { placed: true, normX, normY });
       overlay.setGrabbedPadId(mouseDragPadId);
+      renderOneHitDock();
     }
     overlay.setOneHitPads(store.getOneHitPads());
     renderIdleOverlayIfPaused();
@@ -825,6 +833,33 @@ async function bootstrap(): Promise<void> {
 
         for (const rawHand of mapped.rawHands) {
           const handKey = rawHand.hand;
+          if (handKey === 'R' && gestureDetector.isRightPadMode()) {
+            const lms = rawHand.landmarks;
+            const vp = overlay.getLastViewport(video);
+            const halfNormW = 48 / Math.max(1, vp.drawWidth);
+            const halfNormH = 26 / Math.max(1, vp.drawHeight);
+            const t4 = lms[4];
+            const t8 = lms[8];
+            let nearPad = handGrabbedPadId !== null;
+            if (!nearPad && t4 && t8) {
+              const mx = (t4.x + t8.x) * 0.5;
+              const my = (t4.y + t8.y) * 0.5;
+              for (const p of store.getOneHitPads()) {
+                if (!p.placed) continue;
+                if (
+                  Math.abs(mx - p.normX) <= halfNormW * 1.9 &&
+                  Math.abs(my - p.normY) <= halfNormH * 1.9
+                ) {
+                  nearPad = true;
+                  break;
+                }
+              }
+            }
+            if (nearPad) {
+              gestureDetector.cancelRightPadToggle();
+            }
+          }
+
           const { gestureState, swipe, pointerModeToggled, rightPadModeToggled } = gestureDetector.process(
             handKey,
             rawHand.landmarks,
@@ -961,23 +996,36 @@ async function bootstrap(): Promise<void> {
               const currentPads = store.getOneHitPads();
 
               if (handGrabbedPadId !== null) {
-                if (pinchDist < 0.095) {
-                  const nx = Math.max(0.06, Math.min(0.94, pinchMidX));
-                  const ny = Math.max(0.06, Math.min(0.94, pinchMidY));
-                  store.updateOneHitPad(handGrabbedPadId, { normX: nx, normY: ny });
-                  overlay.setOneHitPads(store.getOneHitPads());
+                gestureDetector.cancelRightPadToggle();
+                if (pinchDist < 0.098) {
+                  // Dragging pad to the right edge of the camera (pinchMidX >= 0.89) returns it to the dock!
+                  if (pinchMidX >= 0.89) {
+                    store.updateOneHitPad(handGrabbedPadId, { placed: false });
+                    handGrabbedPadId = null;
+                    overlay.setGrabbedPadId(null);
+                    overlay.setOneHitPads(store.getOneHitPads());
+                    void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
+                    renderOneHitDock();
+                    overlay.showToast('Returned to dock', '#94a3b8');
+                  } else {
+                    const nx = Math.max(0.06, Math.min(0.88, pinchMidX));
+                    const ny = Math.max(0.06, Math.min(0.94, pinchMidY));
+                    store.updateOneHitPad(handGrabbedPadId, { normX: nx, normY: ny });
+                    overlay.setOneHitPads(store.getOneHitPads());
+                  }
                 } else {
                   handGrabbedPadId = null;
                   overlay.setGrabbedPadId(null);
                   void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
                 }
-              } else if (pinchDist < 0.065) {
+              } else if (pinchDist < 0.068) {
+                gestureDetector.cancelRightPadToggle();
                 for (let i = currentPads.length - 1; i >= 0; i--) {
                   const pad = currentPads[i];
                   if (!pad.placed) continue;
                   if (
-                    Math.abs(pinchMidX - pad.normX) <= halfNormW * 1.15 &&
-                    Math.abs(pinchMidY - pad.normY) <= halfNormH * 1.15
+                    Math.abs(pinchMidX - pad.normX) <= halfNormW * 1.25 &&
+                    Math.abs(pinchMidY - pad.normY) <= halfNormH * 1.25
                   ) {
                     handGrabbedPadId = pad.id;
                     overlay.setGrabbedPadId(pad.id);
