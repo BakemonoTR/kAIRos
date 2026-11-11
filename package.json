@@ -1,19 +1,37 @@
 {
   "name": "kairos",
-  "private": true,
   "version": "1.0.0",
+  "description": "AI-powered real-time hand gesture air instrument and autonomous audio looper",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx test_theremin_looper.ts"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BakemonoTR/kAIRos.git"
+  },
+  "keywords": [
+    "air-instrument",
+    "theremin",
+    "looper",
+    "hand-tracking",
+    "mediapipe",
+    "web-audio-api",
+    "synthesizer",
+    "midi",
+    "typescript"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.18",
     "@tonejs/midi": "^2.0.28",
     "idb-keyval": "^6.2.1"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   }
