@@ -1,3 +1,5 @@
+import { AppLanguage } from './i18n';
+
 export type FingerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export type FingerCode =
@@ -165,6 +167,40 @@ export interface RecordedMidiEvent {
   durationSec: number;
 }
 
+export type FxEffectType =
+  | 'reverb'
+  | 'delay'
+  | 'filter'
+  | 'drive'
+  | 'chorus'
+  | 'compressor'
+  | 'eq3'
+  | 'phaser'
+  | 'bitcrush';
+export type BusId = string;
+
+export interface FxSlotInstance {
+  id: string;
+  type: FxEffectType;
+  enabled: boolean;
+  mix: number; // 0..1
+  params: Record<string, number | string>;
+}
+
+export interface MixerBusData {
+  id: BusId;
+  name: string;
+  volume: number; // 0..1.5
+  muted: boolean;
+  fxSlots: FxSlotInstance[];
+}
+
+export interface FingerMixerChannel {
+  volume: number; // 0..1.5
+  muted: boolean;
+  bus: BusId;
+}
+
 export interface AppSettings {
   activeFingerCount: number; // 1..10
   sensitivity: number; // 0.2 .. 2.0 (1.0 default)
@@ -179,11 +215,20 @@ export interface AppSettings {
   recordResolution: '480p' | '720p';
   liveMidiEnabled: boolean;
   selectedMidiOutputId: string;
+  midiChannel: number; // 1..16
+  midiOctaveShift: number; // -2..2
+  midiMuteLocalAudio: boolean;
+  midiFingerChannels: Record<number, number>; // 0 = global, 1..16 explicit
+  midiFingerEnabled: Record<number, boolean>;
+  language: AppLanguage;
+  showLandmarks: boolean;
   appMode: AppMode;
   thereminPreset: ThereminPreset;
   thereminScale: ThereminScale;
   thereminReverb: number; // 0..1
   customSynth: CustomSynthParams;
+  fingerMixer: Record<number, FingerMixerChannel>;
+  mixerBuses: Record<BusId, MixerBusData>;
 }
 
 /**
@@ -198,8 +243,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 0,
     code: 'L_thumb',
     hand: 'L',
-    label: 'Sol Başparmak',
-    shortLabel: 'L Baş',
+    label: 'Left Thumb',
+    shortLabel: 'L Thm',
     color: '#ff4d6d',
     keyShortcut: 'A',
     keyCode: 'KeyA',
@@ -215,8 +260,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 1,
     code: 'L_index',
     hand: 'L',
-    label: 'Sol İşaret',
-    shortLabel: 'L İşaret',
+    label: 'Left Index',
+    shortLabel: 'L Idx',
     color: '#ff7b00',
     keyShortcut: 'S',
     keyCode: 'KeyS',
@@ -232,8 +277,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 2,
     code: 'L_middle',
     hand: 'L',
-    label: 'Sol Orta',
-    shortLabel: 'L Orta',
+    label: 'Left Middle',
+    shortLabel: 'L Mid',
     color: '#ffb703',
     keyShortcut: 'D',
     keyCode: 'KeyD',
@@ -249,8 +294,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 3,
     code: 'L_ring',
     hand: 'L',
-    label: 'Sol Yüzük',
-    shortLabel: 'L Yüzük',
+    label: 'Left Ring',
+    shortLabel: 'L Rng',
     color: '#8ac926',
     keyShortcut: 'F',
     keyCode: 'KeyF',
@@ -266,8 +311,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 4,
     code: 'L_pinky',
     hand: 'L',
-    label: 'Sol Serçe',
-    shortLabel: 'L Serçe',
+    label: 'Left Pinky',
+    shortLabel: 'L Pnk',
     color: '#06d6a0',
     keyShortcut: 'G',
     keyCode: 'KeyG',
@@ -283,8 +328,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 5,
     code: 'R_thumb',
     hand: 'R',
-    label: 'Sağ Başparmak',
-    shortLabel: 'R Baş',
+    label: 'Right Thumb',
+    shortLabel: 'R Thm',
     color: '#00bbf9',
     keyShortcut: 'H',
     keyCode: 'KeyH',
@@ -300,8 +345,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 6,
     code: 'R_index',
     hand: 'R',
-    label: 'Sağ İşaret',
-    shortLabel: 'R İşaret',
+    label: 'Right Index',
+    shortLabel: 'R Idx',
     color: '#4361ee',
     keyShortcut: 'J',
     keyCode: 'KeyJ',
@@ -317,8 +362,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 7,
     code: 'R_middle',
     hand: 'R',
-    label: 'Sağ Orta',
-    shortLabel: 'R Orta',
+    label: 'Right Middle',
+    shortLabel: 'R Mid',
     color: '#7209b7',
     keyShortcut: 'K',
     keyCode: 'KeyK',
@@ -334,8 +379,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 8,
     code: 'R_ring',
     hand: 'R',
-    label: 'Sağ Yüzük',
-    shortLabel: 'R Yüzük',
+    label: 'Right Ring',
+    shortLabel: 'R Rng',
     color: '#b5179e',
     keyShortcut: 'L',
     keyCode: 'KeyL',
@@ -351,8 +396,8 @@ export const FINGER_METAS: FingerMeta[] = [
     id: 9,
     code: 'R_pinky',
     hand: 'R',
-    label: 'Sağ Serçe',
-    shortLabel: 'R Serçe',
+    label: 'Right Pinky',
+    shortLabel: 'R Pnk',
     color: '#f72585',
     keyShortcut: ';',
     keyCode: 'Semicolon',

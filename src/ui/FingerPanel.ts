@@ -3,6 +3,7 @@ import { AppStore } from '../state/store';
 import { AudioEngine } from '../audio/AudioEngine';
 import { SampleStore } from '../audio/SampleStore';
 import { SynthGenerator } from '../audio/SynthGenerator';
+import { getStrings } from '../i18n';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -164,7 +165,7 @@ export class FingerPanel {
     });
   }
 
-  private renderAll(): void {
+  renderAll(): void {
     const slots = this.store.getSlots();
     this.container.innerHTML = '';
     this.rowElements.clear();
@@ -178,7 +179,8 @@ export class FingerPanel {
 
   private createRow(slot: SlotData): HTMLElement {
     const meta = FINGER_METAS[slot.fingerId];
-    const enLabel = EN_FINGER_LABELS[slot.fingerId] || meta.label;
+    const t = getStrings(this.store.getSettings().language);
+    const enLabel = t.fingerNames[slot.fingerId] || EN_FINGER_LABELS[slot.fingerId] || meta.label;
     const row = document.createElement('div');
     row.className = `slot-row${slot.enabled ? '' : ' disabled'}`;
     row.style.setProperty('--slot-color', meta.color);

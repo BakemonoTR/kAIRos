@@ -14,16 +14,17 @@
       <!-- Top Bar -->
       <header class="topbar">
         <div class="topbar-camera">
-          <div class="brand">
-            <h1>kAIRos</h1>
+          <div class="brand" title="kAIRos — Air Instrument &amp; Looper">
+            <span class="brand-dot"></span>
+            <h1><span class="brand-k">k</span><span class="brand-air">AIR</span><span class="brand-os">os</span></h1>
           </div>
 
           <div class="mode-switch-group">
             <button id="btn-mode-fingers" class="btn-mode active" title="10-finger sample &amp; drum mode">
               Finger mode
             </button>
-            <button id="btn-mode-theremin" class="btn-mode" title="Theremin synth &amp; looper mode">
-              Theremin &amp; looper
+            <button id="btn-mode-theremin" class="btn-mode" title="Synth &amp; looper mode">
+              Synth &amp; looper
             </button>
           </div>
 
@@ -49,6 +50,12 @@
 
         <div class="topbar-sidebar">
           <div class="preset-controls">
+            <button id="btn-open-settings" class="btn btn-ghost btn-icon-only" title="General Settings" aria-label="General Settings">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
             <button id="btn-export-preset" class="btn btn-ghost btn-sm" title="Export preset as JSON">
               Export preset
             </button>
@@ -70,15 +77,15 @@
             <!-- Start Screen -->
             <div id="start-overlay" class="stage-overlay">
               <div class="overlay-card">
-                <h2>Camera and audio standby</h2>
-                <p>
+                <h2 data-i18n="startTitle">Camera &amp; audio required</h2>
+                <p data-i18n="startDesc">
                   Place your hands in frame to play drums and synth in mid-air.
                   Click any channel on the right to load a sample or generate a new synth sound.
                 </p>
                 <p class="hint-text">
                   Keyboard test keys: <code>A S D F G H J K L ;</code>
                 </p>
-                <button id="btn-start-hero" class="btn btn-primary btn-lg">
+                <button id="btn-start-hero" class="btn btn-primary btn-lg" data-i18n="startCameraBtn">
                   Start camera
                 </button>
               </div>
@@ -92,9 +99,9 @@
             </div>
 
             <!-- Camera HUD (Untouched) -->
-            <div class="stage-hud">
+            <div class="stage-hud" id="stage-hud">
               <span id="hud-fps" class="hud-mono-text">FPS: --</span>
-              <span id="hud-hands" class="hud-mono-text">ELLER: 0</span>
+              <span id="hud-hands" class="hud-mono-text">HANDS: 0</span>
             </div>
 
             <!-- Right Black Area: One-Hit Pads Dock -->
@@ -105,20 +112,26 @@
 
         <!-- Right Sidebar -->
         <aside class="finger-sidebar">
-          <!-- Mode 1: 10-Finger Channels -->
+          <!-- Mode 1: 10-Finger Channels & FX -->
           <div id="panel-fingers-mode" class="fingers-container">
             <div class="sidebar-header">
               <div class="sidebar-title-row">
-                <h2>Finger channels</h2>
-                <div class="active-count-box">
-                  <label for="sel-active-fingers">Active</label>
-                  <select id="sel-active-fingers" class="select-sm"></select>
+                <h2 id="fingers-sidebar-title">Finger channels</h2>
+                <div class="sidebar-tab-group" role="tablist" aria-label="Finger sidebar tabs">
+                  <button id="tab-finger-channels" class="sidebar-tab-btn active" type="button">Channels</button>
+                  <button id="tab-finger-fx" class="sidebar-tab-btn" type="button">FX</button>
+                  <button id="tab-finger-midi" class="sidebar-tab-btn" type="button">MIDI</button>
                 </div>
               </div>
 
-              <div class="midi-toolbar">
+              <div id="fingers-channels-toolbar" class="midi-toolbar">
                 <label>
-                  <span>MIDI</span>
+                  <span data-i18n="active">Active</span>
+                  <select id="sel-active-fingers" class="select-sm"></select>
+                </label>
+
+                <label>
+                  <span data-i18n="midi">MIDI</span>
                   <select id="sel-midi-mode" class="select-sm">
                     <option value="drum">GM Drum</option>
                     <option value="melodic">Melodic</option>
@@ -127,30 +140,32 @@
                 </label>
 
                 <label>
-                  <span>Quantize</span>
+                  <span data-i18n="quantize">Quantize</span>
                   <select id="sel-quantize" class="select-sm">
-                    <option value="off">Off</option>
+                    <option value="off" data-i18n="off">Off</option>
                     <option value="1/8">1/8</option>
                     <option value="1/16">1/16</option>
                   </select>
                 </label>
 
-                <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Randomize all synth channels">
+                <button id="btn-randomize-all" class="btn btn-ghost btn-xs" title="Randomize all synth channels" data-i18n="randomizeAll">
                   Randomize all
                 </button>
               </div>
             </div>
 
             <div id="finger-slots-list" class="slots-list"></div>
+            <div id="finger-fx-panel" class="fx-panel hidden"></div>
+            <div id="finger-midi-panel" class="midi-panel hidden"></div>
           </div>
 
           <!-- Mode 2: Theremin & Looper -->
           <div id="panel-theremin-mode" class="theremin-sidebar-panel hidden">
             <div class="theremin-section">
-              <div class="section-title">Synthesizer (Right hand)</div>
+              <div class="section-title" data-i18n="synthRightHand">Synthesizer (Right hand)</div>
 
               <label class="theremin-field">
-                <span>Sound preset</span>
+                <span data-i18n="soundPreset">Sound preset</span>
                 <select id="sel-theremin-preset" class="select-sm">
                   <option value="cosmic">Cosmic sine</option>
                   <option value="cyber">Cyber lead</option>
@@ -162,10 +177,10 @@
               </label>
 
               <div id="custom-synth-controls" class="custom-synth-box hidden">
-                <div class="custom-synth-header">Custom synth parameters</div>
+                <div class="custom-synth-header" data-i18n="customSynthParams">Custom synth parameters</div>
 
                 <label class="theremin-field">
-                  <span>Osc 1 wave</span>
+                  <span data-i18n="osc1Wave">Osc 1 wave</span>
                   <select id="sel-custom-osc1" class="select-sm">
                     <option value="sine">Sine</option>
                     <option value="triangle">Triangle</option>
@@ -175,7 +190,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Osc 2 wave</span>
+                  <span data-i18n="osc2Wave">Osc 2 wave</span>
                   <select id="sel-custom-osc2" class="select-sm">
                     <option value="sine">Sine</option>
                     <option value="triangle">Triangle</option>
@@ -185,7 +200,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Osc 2 octave</span>
+                  <span data-i18n="osc2Octave">Osc 2 octave</span>
                   <select id="sel-custom-octave" class="select-sm">
                     <option value="-1">-1 oct (Sub)</option>
                     <option value="0">0 oct (Unison)</option>
@@ -194,7 +209,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Detune</span>
+                  <span data-i18n="detune">Detune</span>
                   <div class="field-slider-wrap">
                     <input type="range" id="rng-custom-detune" min="-50" max="50" step="1" value="12" />
                     <strong id="val-custom-detune">12 ct</strong>
@@ -202,7 +217,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Filter mode</span>
+                  <span data-i18n="filterMode">Filter mode</span>
                   <select id="sel-custom-filter" class="select-sm">
                     <option value="lowpass">Lowpass</option>
                     <option value="bandpass">Bandpass</option>
@@ -211,7 +226,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Resonance (Q)</span>
+                  <span data-i18n="resonanceQ">Resonance (Q)</span>
                   <div class="field-slider-wrap">
                     <input type="range" id="rng-custom-q" min="0.5" max="15" step="0.5" value="4" />
                     <strong id="val-custom-q">4.0</strong>
@@ -219,7 +234,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Vibrato rate</span>
+                  <span data-i18n="vibratoRate">Vibrato rate</span>
                   <div class="field-slider-wrap">
                     <input type="range" id="rng-custom-vibrate" min="0" max="12" step="0.2" value="5" />
                     <strong id="val-custom-vibrate">5.0 Hz</strong>
@@ -227,7 +242,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Vibrato depth</span>
+                  <span data-i18n="vibratoDepth">Vibrato depth</span>
                   <div class="field-slider-wrap">
                     <input type="range" id="rng-custom-vibdepth" min="0" max="20" step="0.5" value="4.5" />
                     <strong id="val-custom-vibdepth">4.5</strong>
@@ -235,7 +250,7 @@
                 </label>
 
                 <label class="theremin-field">
-                  <span>Glide</span>
+                  <span data-i18n="glide">Glide</span>
                   <div class="field-slider-wrap">
                     <input type="range" id="rng-custom-glide" min="0.005" max="0.2" step="0.005" value="0.03" />
                     <strong id="val-custom-glide">30 ms</strong>
@@ -244,7 +259,7 @@
               </div>
 
               <label class="theremin-field">
-                <span>Scale</span>
+                <span data-i18n="scale">Scale</span>
                 <select id="sel-theremin-scale" class="select-sm">
                   <option value="pentatonic">Pentatonic</option>
                   <option value="blues">Blues</option>
@@ -255,7 +270,7 @@
               </label>
 
               <label class="theremin-field">
-                <span>Reverb</span>
+                <span data-i18n="reverb">Reverb</span>
                 <div class="field-slider-wrap">
                   <input type="range" id="rng-theremin-reverb" min="0" max="1" step="0.02" value="0.65" />
                   <strong id="val-theremin-reverb">65%</strong>
@@ -264,60 +279,60 @@
             </div>
 
             <div class="theremin-section">
-              <div class="section-title">Looper</div>
+              <div class="section-title" data-i18n="looper">Looper</div>
 
               <div class="looper-row">
                 <div class="looper-row-info">
-                  <span class="card-title">Synth loop</span>
+                  <span class="card-title" data-i18n="synthLoop">Synth loop</span>
                   <span id="lbl-synth-layers" class="status-pill">0 layers</span>
                 </div>
-                <button id="btn-clear-synth-loop" class="btn btn-ghost btn-xs">Clear</button>
+                <button id="btn-clear-synth-loop" class="btn btn-ghost btn-xs" data-i18n="clear">Clear</button>
               </div>
 
               <div class="looper-row">
                 <div class="looper-row-info">
-                  <span class="card-title">Drum loop</span>
+                  <span class="card-title" data-i18n="drumLoop">Drum loop</span>
                   <span id="lbl-drum-hits" class="status-pill">0 hits</span>
                 </div>
-                <button id="btn-clear-drum-loop" class="btn btn-ghost btn-xs">Clear</button>
+                <button id="btn-clear-drum-loop" class="btn btn-ghost btn-xs" data-i18n="clear">Clear</button>
               </div>
 
               <div class="looper-tempo-row">
                 <label class="tempo-inline">
-                  <span>Tempo</span>
+                  <span data-i18n="tempo">Tempo</span>
                   <input type="number" id="inp-theremin-bpm" min="50" max="220" value="120" class="input-sm" />
                   <span>BPM</span>
                 </label>
-                <button id="btn-clear-all-loops" class="btn btn-ghost btn-xs">Clear all</button>
+                <button id="btn-clear-all-loops" class="btn btn-ghost btn-xs" data-i18n="clearAll">Clear all</button>
               </div>
             </div>
 
             <div class="theremin-section">
-              <div class="section-title">Hand controls</div>
+              <div class="section-title" data-i18n="handControls">Hand controls</div>
               <div class="gesture-table">
                 <div class="gesture-row">
-                  <span class="gesture-key">Right fist</span>
-                  <span class="gesture-val">Play synth &amp; volume</span>
+                  <span class="gesture-key" data-i18n="gRightFist">Right fist</span>
+                  <span class="gesture-val" data-i18n="gRightFistDesc">Play synth &amp; volume</span>
                 </div>
                 <div class="gesture-row">
-                  <span class="gesture-key">Right vertical / horizontal</span>
-                  <span class="gesture-val">Pitch / filter</span>
+                  <span class="gesture-key" data-i18n="gRightMove">Right vertical / horizontal</span>
+                  <span class="gesture-val" data-i18n="gRightMoveDesc">Pitch / filter</span>
                 </div>
                 <div class="gesture-row">
-                  <span class="gesture-key">Right wall touch</span>
-                  <span class="gesture-val">Record synth loop</span>
+                  <span class="gesture-key" data-i18n="gRightWall">Right wall touch</span>
+                  <span class="gesture-val" data-i18n="gRightWallDesc">Record synth loop</span>
                 </div>
                 <div class="gesture-row">
-                  <span class="gesture-key">Left wall touch</span>
-                  <span class="gesture-val">Record drum loop</span>
+                  <span class="gesture-key" data-i18n="gLeftWall">Left wall touch</span>
+                  <span class="gesture-val" data-i18n="gLeftWallDesc">Record drum loop</span>
                 </div>
                 <div class="gesture-row">
-                  <span class="gesture-key">Left palm close &amp; open</span>
-                  <span class="gesture-val">Toggle pointer mode</span>
+                  <span class="gesture-key" data-i18n="gLeftPalm">Left palm close &amp; open</span>
+                  <span class="gesture-val" data-i18n="gLeftPalmDesc">Toggle pointer mode</span>
                 </div>
                 <div class="gesture-row">
-                  <span class="gesture-key">Right palm close &amp; open</span>
-                  <span class="gesture-val">5-finger one-hit mode</span>
+                  <span class="gesture-key" data-i18n="gRightPalm">Right palm close &amp; open</span>
+                  <span class="gesture-val" data-i18n="gRightPalmDesc">5-finger one-hit mode</span>
                 </div>
               </div>
             </div>
@@ -372,8 +387,8 @@
       <div id="record-modal" class="modal-backdrop hidden">
         <div class="modal-box">
           <div class="modal-header">
-            <h3>Recording complete</h3>
-            <button id="btn-close-modal" class="btn btn-ghost btn-sm">Close</button>
+            <h3 data-i18n="recComplete">Recording complete</h3>
+            <button id="btn-close-modal" class="btn btn-ghost btn-sm" data-i18n="close">Close</button>
           </div>
           <div class="modal-body">
             <video id="preview-video" controls playsinline></video>
@@ -385,23 +400,53 @@
                 <input type="number" id="inp-midi-bpm" min="40" max="240" value="120" class="input-sm" />
               </label>
               <label>
-                Quantize
+                <span data-i18n="quantize">Quantize</span>
                 <select id="sel-modal-quantize" class="select-sm">
-                  <option value="off">Off</option>
+                  <option value="off" data-i18n="off">Off</option>
                   <option value="1/8">1/8</option>
                   <option value="1/16">1/16</option>
                 </select>
               </label>
               <label class="inline-toggle">
                 <input type="checkbox" id="chk-multitrack" checked />
-                <span>Multi-track</span>
+                <span data-i18n="multiTrack">Multi-track</span>
               </label>
             </div>
           </div>
           <div class="modal-footer">
-            <button id="btn-dl-video" class="btn btn-secondary">Download video</button>
-            <button id="btn-dl-midi" class="btn btn-secondary">Download MIDI</button>
-            <button id="btn-dl-both" class="btn btn-primary">Download both</button>
+            <button id="btn-dl-video" class="btn btn-secondary" data-i18n="dlVideo">Download video</button>
+            <button id="btn-dl-midi" class="btn btn-secondary" data-i18n="dlMidi">Download MIDI</button>
+            <button id="btn-dl-both" class="btn btn-primary" data-i18n="dlBoth">Download both</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- General Settings Modal -->
+      <div id="settings-modal" class="modal-backdrop hidden">
+        <div class="modal-box settings-modal-box">
+          <div class="modal-header">
+            <h3 id="settings-modal-title">General Settings</h3>
+          </div>
+          <div class="modal-body settings-modal-body">
+            <label class="settings-row">
+              <span id="lbl-set-language">Language</span>
+              <select id="sel-language" class="select-sm">
+                <option value="en">English</option>
+                <option value="tr">Türkçe</option>
+                <option value="es">Español</option>
+                <option value="zh">中文</option>
+                <option value="ru">Русский</option>
+              </select>
+            </label>
+
+            <label class="settings-row">
+              <span id="lbl-set-landmarks">Show Hand Skeleton Overlay</span>
+              <input type="checkbox" id="chk-set-landmarks" checked />
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button id="btn-reset-settings" class="btn btn-ghost">Reset Settings</button>
+            <button id="btn-done-settings" class="btn btn-primary">Close</button>
           </div>
         </div>
       </div>

@@ -42,7 +42,7 @@ interface HandTrack {
   lastSeenMs: number;
 }
 
-const HOLD_MS = 120; // keep a briefly-lost hand alive to bridge detector flicker
+const HOLD_MS = 160; // keep a briefly-lost hand alive to bridge detector flicker
 const CONTINUITY_MS = 600; // how long a previous hand position is trusted for identity
 const HANDEDNESS_EMA = 0.25;
 
@@ -148,9 +148,25 @@ export class FingerMapper {
       let label: 'L' | 'R' | null = null;
       const MAX_CONTINUITY_JUMP = 0.25;
 
-      // In Theremin mode, screen side is absolute anchor to prevent Theremin jumping to Left hand
+      // In Theremin mode, use temporal continuity first so a tracked right hand crossing center doesn't drop audio,
+      // and fall back strictly to screen side for fresh hands.
       if (appMode === 'theremin') {
-        label = d.center.x < 0.48 ? 'L' : 'R';
+        const distL =
+          this.tracks.L && nowMs - this.tracks.L.lastSeenMs < CONTINUITY_MS
+            ? Math.hypot(this.tracks.L.center.x - d.center.x, this.tracks.L.center.y - d.center.y)
+            : Infinity;
+        const distR =
+          this.tracks.R && nowMs - this.tracks.R.lastSeenMs < CONTINUITY_MS
+            ? Math.hypot(this.tracks.R.center.x - d.center.x, this.tracks.R.center.y - d.center.y)
+            : Infinity;
+
+        if (distR < MAX_CONTINUITY_JUMP && distR < distL * 0.75) {
+          label = 'R';
+        } else if (distL < MAX_CONTINUITY_JUMP && distL < distR * 0.75) {
+          label = 'L';
+        } else {
+          label = d.center.x < 0.48 ? 'L' : 'R';
+        }
       } else {
         // 1) Spatial continuity with recently tracked hands
         const distL =

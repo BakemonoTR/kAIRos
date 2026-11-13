@@ -14,14 +14,97 @@ const CDN_MODEL_PATH =
 
 export class HandTracker {
   private landmarker: HandLandmarker | null = null;
+  private worker: Worker | null = null;
+  private workerReady = false;
+  private inFlight = false;
+  private nextJobId = 1;
+  private onResultCallback: ((result: HandLandmarkerResult | null, timestampMs: number) => void) | null = null;
   private initPromise: Promise<void> | null = null;
   private lastTimestampMs = -1;
 
+  isWorkerActive(): boolean {
+    return this.workerReady && this.worker !== null;
+  }
+
+  isBusy(): boolean {
+    return this.inFlight;
+  }
+
+  private async initWorker(): Promise<boolean> {
+    if (typeof Worker === 'undefined' || typeof createImageBitmap === 'undefined') {
+      return false;
+    }
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          this.worker?.terminate();
+          this.worker = null;
+          this.workerReady = false;
+          finish(false);
+        }
+      }, 15000);
+
+      try {
+        const w = new Worker(new URL('./handTracker.worker.ts', import.meta.url), {
+          type: 'module',
+        });
+        this.worker = w;
+
+        w.onmessage = (ev: MessageEvent) => {
+          const msg = ev.data;
+          if (!msg) return;
+          if (msg.type === 'ready') {
+            clearTimeout(timeout);
+            this.workerReady = true;
+            finish(true);
+          } else if (msg.type === 'initError') {
+            clearTimeout(timeout);
+            w.terminate();
+            this.worker = null;
+            this.workerReady = false;
+            finish(false);
+          } else if (msg.type === 'result') {
+            this.inFlight = false;
+            if (this.onResultCallback) {
+              this.onResultCallback(msg.result as HandLandmarkerResult | null, msg.timestampMs);
+            }
+          }
+        };
+
+        w.onerror = () => {
+          clearTimeout(timeout);
+          this.inFlight = false;
+          w.terminate();
+          this.worker = null;
+          this.workerReady = false;
+          finish(false);
+        };
+
+        w.postMessage({ type: 'init' });
+      } catch {
+        clearTimeout(timeout);
+        this.worker = null;
+        this.workerReady = false;
+        finish(false);
+      }
+    });
+  }
+
   async init(): Promise<void> {
-    if (this.landmarker) return;
+    if (this.workerReady || this.landmarker) return;
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
+      const workerOk = await this.initWorker();
+      if (workerOk) return;
+
       let vision;
       try {
         vision = await FilesetResolver.forVisionTasks(LOCAL_WASM_PATH);
@@ -62,6 +145,38 @@ export class HandTracker {
     return this.initPromise;
   }
 
+  detectAsync(
+    video: HTMLVideoElement,
+    timestampMs: number,
+    onResult: (result: HandLandmarkerResult | null, timestampMs: number) => void
+  ): boolean {
+    if (!this.workerReady || !this.worker) return false;
+    if (this.inFlight) return false;
+    if (video.videoWidth === 0 || video.videoHeight === 0 || video.readyState < 2) return false;
+
+    this.inFlight = true;
+    this.onResultCallback = onResult;
+    const jobId = this.nextJobId++;
+
+    createImageBitmap(video)
+      .then((bitmap) => {
+        if (!this.worker || !this.workerReady) {
+          bitmap.close();
+          this.inFlight = false;
+          return;
+        }
+        this.worker.postMessage(
+          { type: 'detect', id: jobId, bitmap, timestampMs },
+          [bitmap]
+        );
+      })
+      .catch(() => {
+        this.inFlight = false;
+      });
+
+    return true;
+  }
+
   detect(video: HTMLVideoElement, timestampMs: number): HandLandmarkerResult | null {
     if (!this.landmarker) return null;
     if (video.videoWidth === 0 || video.videoHeight === 0) return null;
@@ -71,6 +186,13 @@ export class HandTracker {
   }
 
   close(): void {
+    this.inFlight = false;
+    this.onResultCallback = null;
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    this.workerReady = false;
     this.landmarker?.close();
     this.landmarker = null;
     this.initPromise = null;

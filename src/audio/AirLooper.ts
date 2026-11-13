@@ -20,6 +20,7 @@ export class AirLooper {
 
   // Audio capture from Theremin
   private recorderNode: ScriptProcessorNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
   private recordInputGain: GainNode | null = null;
   private circularBufferL: Float32Array | null = null;
   private circularBufferR: Float32Array | null = null;
@@ -62,18 +63,15 @@ export class AirLooper {
     this.recordInputGain = ctx.createGain();
     this.recordInputGain.gain.value = 1.0;
 
-    // ScriptProcessor to capture audio PCM frames into circular buffer
-    this.recorderNode = ctx.createScriptProcessor(4096, 2, 2);
-    this.recorderNode.onaudioprocess = (e) => {
-      const inputL = e.inputBuffer.getChannelData(0);
-      const inputR = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inputL;
-      const len = inputL.length;
+    const dummySilence = ctx.createGain();
+    dummySilence.gain.value = 0;
 
+    const writeSamples = (inputL: Float32Array, inputR: Float32Array) => {
       const bufL = this.circularBufferL;
       const bufR = this.circularBufferR;
       const cap = this.bufferCapacitySamples;
       if (!bufL || !bufR) return;
-
+      const len = inputL.length;
       let w = this.writeIndex;
       for (let i = 0; i < len; i++) {
         bufL[w] = inputL[i];
@@ -83,11 +81,81 @@ export class AirLooper {
       this.writeIndex = w;
     };
 
-    const dummySilence = ctx.createGain();
-    dummySilence.gain.value = 0;
-    this.recordInputGain.connect(this.recorderNode);
-    this.recorderNode.connect(dummySilence);
-    dummySilence.connect(ctx.destination);
+    const setupScriptProcessorFallback = () => {
+      if (this.recorderNode) return;
+      this.recorderNode = ctx.createScriptProcessor(4096, 2, 2);
+      this.recorderNode.onaudioprocess = (e) => {
+        const inputL = e.inputBuffer.getChannelData(0);
+        const inputR =
+          e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inputL;
+        writeSamples(inputL, inputR);
+      };
+      this.recordInputGain!.connect(this.recorderNode);
+      this.recorderNode.connect(dummySilence);
+      dummySilence.connect(ctx.destination);
+    };
+
+    if (typeof AudioWorkletNode !== 'undefined' && ctx.audioWorklet) {
+      const workletCode = `
+        class KairosCaptureProcessor extends AudioWorkletProcessor {
+          constructor() {
+            super();
+            this.bufSize = 2048;
+            this.bufL = new Float32Array(this.bufSize);
+            this.bufR = new Float32Array(this.bufSize);
+            this.pos = 0;
+          }
+          process(inputs) {
+            const input = inputs[0];
+            if (input && input.length > 0) {
+              const chL = input[0];
+              const chR = input.length > 1 ? input[1] : chL;
+              for (let i = 0; i < chL.length; i++) {
+                this.bufL[this.pos] = chL[i];
+                this.bufR[this.pos] = chR[i];
+                this.pos++;
+                if (this.pos >= this.bufSize) {
+                  const outL = this.bufL;
+                  const outR = this.bufR;
+                  this.bufL = new Float32Array(this.bufSize);
+                  this.bufR = new Float32Array(this.bufSize);
+                  this.pos = 0;
+                  this.port.postMessage({ l: outL, r: outR }, [outL.buffer, outR.buffer]);
+                }
+              }
+            }
+            return true;
+          }
+        }
+        registerProcessor('kairos-capture-processor', KairosCaptureProcessor);
+      `;
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      ctx.audioWorklet
+        .addModule(url)
+        .then(() => {
+          URL.revokeObjectURL(url);
+          if (!this.ctx || !this.recordInputGain) return;
+          this.workletNode = new AudioWorkletNode(ctx, 'kairos-capture-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+          });
+          this.workletNode.port.onmessage = (ev: MessageEvent) => {
+            const { l, r } = ev.data as { l: Float32Array; r: Float32Array };
+            writeSamples(l, r);
+          };
+          this.recordInputGain.connect(this.workletNode);
+          this.workletNode.connect(dummySilence);
+          dummySilence.connect(ctx.destination);
+        })
+        .catch(() => {
+          URL.revokeObjectURL(url);
+          setupScriptProcessorFallback();
+        });
+    } else {
+      setupScriptProcessorFallback();
+    }
 
     this.masterLoopStartTime = ctx.currentTime;
   }

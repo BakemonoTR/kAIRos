@@ -86,7 +86,7 @@ interface Candidate {
 
 // Tuning constants
 const COOLDOWN_MS = 55;
-const PEAK_WINDOW_MS = 65; // look-back window for velocity peak during strike
+const PEAK_WINDOW_MS = 90; // look-back window for velocity peak during strike (resilient to occasional 20-30fps frame drops)
 const NEIGHBOR_WINDOW_MS = 85; // brief post-hit window for adjacent sympathetic bounce
 const NEIGHBOR_PENALTY = 1.35;
 const COMMON_MODE_K = 0.30; // light common-mode rejection for whole-hand tilt without starving active finger
@@ -381,7 +381,9 @@ export class TapDetector {
           st.releaseTrough = Math.min(st.releaseTrough, isolated);
           const cooled = nowMs - st.lastTriggerMs >= COOLDOWN_MS;
           // Crucial: finger must be actively moving downwards right now and have traveled downward from its release trough
-          const activelyMoving = isolatedVel > 0.15 * velThreshold;
+          const activelyMoving =
+            isolatedVel > 0.15 * velThreshold ||
+            (peakVel >= velThreshold * 1.15 && isolatedVel > 0.05 * velThreshold);
           const strokeFromTrough = isolated - st.releaseTrough >= 0.65 * downThreshold;
           if (
             cooled &&

@@ -1,9 +1,14 @@
 import {
   AppSettings,
+  BusId,
   DEFAULT_ONE_HIT_PADS,
   FINGER_METAS,
   FingerId,
+  FingerMixerChannel,
+  FxEffectType,
+  FxSlotInstance,
   MidiMapMode,
+  MixerBusData,
   OneHitPadData,
   SlotData,
   TapEvent,
@@ -32,6 +37,147 @@ export interface StoreEvents {
 
 const SETTINGS_STORAGE_KEY = 'beatcam_settings_v1';
 
+export const DEFAULT_FINGER_MIXER_CHANNEL: FingerMixerChannel = {
+  volume: 1.0,
+  muted: false,
+  bus: 'master',
+};
+
+export function createFxSlot(type: FxEffectType, id?: string): FxSlotInstance {
+  const uid = id ?? `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  switch (type) {
+    case 'reverb':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 0.52,
+        params: { size: 2.2, preDelayMs: 20, toneHz: 6200 },
+      };
+    case 'delay':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 0.45,
+        params: { timeMs: 240, feedback: 0.42 },
+      };
+    case 'filter':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 1.0,
+        params: { filterType: 'lowpass', cutoff: 3200, q: 2.2 },
+      };
+    case 'drive':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 0.85,
+        params: { amount: 0.45 },
+      };
+    case 'chorus':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 0.55,
+        params: { rateHz: 1.4, depthMs: 4.5 },
+      };
+    case 'compressor':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 1.0,
+        params: { threshold: -18, ratio: 5, attackMs: 8, releaseMs: 140 },
+      };
+    case 'eq3':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 1.0,
+        params: { lowDb: 2.5, midDb: 0, highDb: 2.0 },
+      };
+    case 'phaser':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 0.65,
+        params: { rateHz: 0.9, depthHz: 900, baseHz: 700 },
+      };
+    case 'bitcrush':
+      return {
+        id: uid,
+        type,
+        enabled: true,
+        mix: 0.75,
+        params: { bits: 5, toneHz: 5500 },
+      };
+  }
+}
+
+export function createDefaultFingerMixerMap(): Record<number, FingerMixerChannel> {
+  const map: Record<number, FingerMixerChannel> = {};
+  for (let i = 0; i < 10; i++) {
+    map[i] = { ...DEFAULT_FINGER_MIXER_CHANNEL };
+  }
+  return map;
+}
+
+export function createDefaultMidiFingerChannels(): Record<number, number> {
+  const map: Record<number, number> = {};
+  for (let i = 0; i < 10; i++) {
+    map[i] = 0; // 0 = use global MIDI channel
+  }
+  return map;
+}
+
+export function createDefaultMidiFingerEnabled(): Record<number, boolean> {
+  const map: Record<number, boolean> = {};
+  for (let i = 0; i < 10; i++) {
+    map[i] = true;
+  }
+  return map;
+}
+
+export function createDefaultMixerBuses(): Record<BusId, MixerBusData> {
+  return {
+    master: {
+      id: 'master',
+      name: 'Master',
+      volume: 1.0,
+      muted: false,
+      fxSlots: [],
+    },
+    bus1: {
+      id: 'bus1',
+      name: 'Bus 1',
+      volume: 1.0,
+      muted: false,
+      fxSlots: [createFxSlot('reverb', 'default_bus1_rev')],
+    },
+    bus2: {
+      id: 'bus2',
+      name: 'Bus 2',
+      volume: 1.0,
+      muted: false,
+      fxSlots: [createFxSlot('delay', 'default_bus2_dly')],
+    },
+    bus3: {
+      id: 'bus3',
+      name: 'Bus 3',
+      volume: 1.0,
+      muted: false,
+      fxSlots: [],
+    },
+  };
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   activeFingerCount: 10,
   sensitivity: 1.0,
@@ -46,6 +192,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   recordResolution: '720p',
   liveMidiEnabled: false,
   selectedMidiOutputId: '',
+  midiChannel: 1,
+  midiOctaveShift: 0,
+  midiMuteLocalAudio: false,
+  midiFingerChannels: createDefaultMidiFingerChannels(),
+  midiFingerEnabled: createDefaultMidiFingerEnabled(),
+  language: 'en',
+  showLandmarks: true,
   appMode: 'fingers',
   thereminPreset: 'cosmic',
   thereminScale: 'pentatonic',
@@ -61,13 +214,66 @@ const DEFAULT_SETTINGS: AppSettings = {
     vibratoDepth: 4.5,
     glide: 0.03,
   },
+  fingerMixer: createDefaultFingerMixerMap(),
+  mixerBuses: createDefaultMixerBuses(),
 };
 
 function loadInitialSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS, customSynth: { ...DEFAULT_SETTINGS.customSynth } };
+    if (!raw) {
+      return {
+        ...DEFAULT_SETTINGS,
+        customSynth: { ...DEFAULT_SETTINGS.customSynth },
+        fingerMixer: createDefaultFingerMixerMap(),
+        mixerBuses: createDefaultMixerBuses(),
+      };
+    }
     const parsed = JSON.parse(raw);
+    const mergedFingerMixer = createDefaultFingerMixerMap();
+    if (parsed.fingerMixer && typeof parsed.fingerMixer === 'object') {
+      for (let i = 0; i < 10; i++) {
+        if (parsed.fingerMixer[i]) {
+          mergedFingerMixer[i] = { ...DEFAULT_FINGER_MIXER_CHANNEL, ...parsed.fingerMixer[i] };
+        }
+      }
+    }
+    const defaultBuses = createDefaultMixerBuses();
+    const mergedBuses: Record<BusId, MixerBusData> = { ...defaultBuses };
+    if (parsed.mixerBuses && typeof parsed.mixerBuses === 'object') {
+      for (const [bId, bVal] of Object.entries(parsed.mixerBuses as Record<string, Partial<MixerBusData>>)) {
+        if (!bVal || typeof bVal !== 'object') continue;
+        const fallback = defaultBuses[bId] ?? {
+          id: bId,
+          name: bVal.name || bId,
+          volume: 1.0,
+          muted: false,
+          fxSlots: [],
+        };
+        mergedBuses[bId] = {
+          ...fallback,
+          ...bVal,
+          id: bId,
+          fxSlots: Array.isArray(bVal.fxSlots) ? bVal.fxSlots : fallback.fxSlots,
+        };
+      }
+    }
+    const mergedMidiChannels = createDefaultMidiFingerChannels();
+    if (parsed.midiFingerChannels && typeof parsed.midiFingerChannels === 'object') {
+      for (let i = 0; i < 10; i++) {
+        if (typeof parsed.midiFingerChannels[i] === 'number') {
+          mergedMidiChannels[i] = parsed.midiFingerChannels[i];
+        }
+      }
+    }
+    const mergedMidiEnabled = createDefaultMidiFingerEnabled();
+    if (parsed.midiFingerEnabled && typeof parsed.midiFingerEnabled === 'object') {
+      for (let i = 0; i < 10; i++) {
+        if (typeof parsed.midiFingerEnabled[i] === 'boolean') {
+          mergedMidiEnabled[i] = parsed.midiFingerEnabled[i];
+        }
+      }
+    }
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
@@ -75,9 +281,20 @@ function loadInitialSettings(): AppSettings {
         ...DEFAULT_SETTINGS.customSynth,
         ...(parsed.customSynth || {}),
       },
+      fingerMixer: mergedFingerMixer,
+      mixerBuses: mergedBuses,
+      midiFingerChannels: mergedMidiChannels,
+      midiFingerEnabled: mergedMidiEnabled,
     };
   } catch {
-    return { ...DEFAULT_SETTINGS, customSynth: { ...DEFAULT_SETTINGS.customSynth } };
+    return {
+      ...DEFAULT_SETTINGS,
+      customSynth: { ...DEFAULT_SETTINGS.customSynth },
+      fingerMixer: createDefaultFingerMixerMap(),
+      mixerBuses: createDefaultMixerBuses(),
+      midiFingerChannels: createDefaultMidiFingerChannels(),
+      midiFingerEnabled: createDefaultMidiFingerEnabled(),
+    };
   }
 }
 

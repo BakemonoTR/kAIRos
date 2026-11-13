@@ -48,6 +48,11 @@ interface ToastBanner {
 
 export class Overlay {
   private canvas: HTMLCanvasElement;
+  private showLandmarks = true;
+
+  setShowLandmarks(enabled: boolean): void {
+    this.showLandmarks = enabled;
+  }
   private ctx: CanvasRenderingContext2D;
   private ripples: HitRipple[] = [];
   private pressedSet = new Set<FingerId>();
@@ -74,12 +79,39 @@ export class Overlay {
   private oneHitFlashes = new Map<number, number>();
   private grabbedPadId: number | null = null;
   private hoveredPadId: number | null = null;
+  private cachedCssW = 0;
+  private cachedCssH = 0;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context alınamadı.');
     this.ctx = ctx;
+
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+            this.cachedCssW = entry.contentRect.width;
+            this.cachedCssH = entry.contentRect.height;
+          }
+        }
+      });
+      this.resizeObserver.observe(canvas);
+    }
+  }
+
+  private getCanvasCssSize(): { width: number; height: number } {
+    if (this.cachedCssW > 0 && this.cachedCssH > 0) {
+      return { width: this.cachedCssW, height: this.cachedCssH };
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.cachedCssW = rect.width;
+      this.cachedCssH = rect.height;
+    }
+    return { width: rect.width, height: rect.height };
   }
 
   setLeftPointerMode(enabled: boolean): void {
@@ -132,10 +164,10 @@ export class Overlay {
   }
 
   getLastViewport(video: HTMLVideoElement): RenderViewport {
-    const rect = this.canvas.getBoundingClientRect();
+    const { width, height } = this.getCanvasCssSize();
     return this.computeContainViewport(
-      rect.width,
-      rect.height,
+      width,
+      height,
       video.videoWidth,
       video.videoHeight
     );
@@ -250,10 +282,10 @@ export class Overlay {
     video: HTMLVideoElement,
     nowMs = performance.now()
   ): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const targetW = Math.max(1, Math.round(rect.width * dpr));
-    const targetH = Math.max(1, Math.round(rect.height * dpr));
+    const { width, height } = this.getCanvasCssSize();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetW = Math.max(1, Math.round(width * dpr));
+    const targetH = Math.max(1, Math.round(height * dpr));
 
     if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
       this.canvas.width = targetW;
@@ -262,11 +294,11 @@ export class Overlay {
 
     this.ctx.save();
     this.ctx.scale(dpr, dpr);
-    this.ctx.clearRect(0, 0, rect.width, rect.height);
+    this.ctx.clearRect(0, 0, width, height);
 
     const vp = this.computeContainViewport(
-      rect.width,
-      rect.height,
+      width,
+      height,
       video.videoWidth,
       video.videoHeight
     );
@@ -285,12 +317,15 @@ export class Overlay {
     const toX = (nx: number) => vp.offsetX + nx * vp.drawWidth;
     const toY = (ny: number) => vp.offsetY + ny * vp.drawHeight;
 
-    this.ripples = this.ripples.filter((r) => nowMs - r.startedAt < 340);
+    if (this.ripples.length > 0) {
+      this.ripples = this.ripples.filter((r) => nowMs - r.startedAt < 340);
+    }
 
     // 0. Placed One-Hit Pads on Camera
     this.drawOneHitPads(ctx, vp, nowMs);
 
     // 1. Subtle hand skeleton lines
+    if (this.showLandmarks) {
     for (const handObj of mapped.rawHands) {
       const lms = handObj.landmarks;
       const isRightHand = handObj.hand === 'R';
@@ -385,6 +420,7 @@ export class Overlay {
 
       ctx.restore();
     }
+    }
 
     // 2. Fingertip colored dots + labels + hit ripples
     for (const [fingerId, fData] of mapped.fingers.entries()) {
@@ -457,10 +493,14 @@ export class Overlay {
       }
 
       const baseRadius = isPressed ? 13 : 9;
-      ctx.shadowColor = meta.color;
-      ctx.shadowBlur = isPressed ? 22 : 8;
-
+      // Fast halo glow instead of expensive per-dot ctx.shadowBlur
       ctx.fillStyle = meta.color;
+      ctx.globalAlpha = (isEnabled ? 1 : 0.28) * (isPressed ? 0.34 : 0.18);
+      ctx.beginPath();
+      ctx.arc(x, y, baseRadius + (isPressed ? 7 : 3.5), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = isEnabled ? 1 : 0.28;
       ctx.beginPath();
       ctx.arc(x, y, baseRadius, 0, Math.PI * 2);
       ctx.fill();
@@ -470,7 +510,6 @@ export class Overlay {
       ctx.stroke();
 
       if (isEnabled) {
-        ctx.shadowBlur = 0;
         const tag = meta.shortLabel;
         ctx.font = '600 11px Inter, system-ui, sans-serif';
         const textW = ctx.measureText(tag).width;
@@ -541,11 +580,9 @@ export class Overlay {
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
 
-    // Subtle shadow for legibility over camera video without any strokeText miter spikes
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-    ctx.shadowBlur = 3;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 1;
+    // Fast 1px offset drop-shadow instead of expensive ctx.shadowBlur
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillText(text, x, y + 1);
 
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);

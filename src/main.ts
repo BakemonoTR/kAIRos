@@ -4,6 +4,8 @@ import {
   CustomSynthParams,
   CustomSynthWaveform,
   FINGER_METAS,
+  FingerId,
+  MappedHandsResult,
   MidiMapMode,
   QuantizeMode,
   ThereminPreset,
@@ -23,6 +25,9 @@ import { GestureDetector } from './gesture/GestureDetector';
 import { SampleStore } from './audio/SampleStore';
 import { Overlay } from './ui/Overlay';
 import { FingerPanel } from './ui/FingerPanel';
+import { FxPanel } from './ui/FxPanel';
+import { MidiPanel } from './ui/MidiPanel';
+import { AppLanguage, getStrings, I18nStrings } from './i18n';
 import { VideoRecorder, RecordedVideoResult } from './record/VideoRecorder';
 import { MidiRecorder } from './record/MidiRecorder';
 import { WebMidiOut } from './record/WebMidiOut';
@@ -76,6 +81,53 @@ async function bootstrap(): Promise<void> {
   const btnModeTheremin = getEl<HTMLButtonElement>('btn-mode-theremin');
   const panelFingersMode = getEl<HTMLElement>('panel-fingers-mode');
   const panelThereminMode = getEl<HTMLElement>('panel-theremin-mode');
+
+  // Finger Sidebar Tabs (Channels vs FX vs MIDI)
+  const workspaceEl = document.querySelector<HTMLElement>('.workspace');
+  const fingersSidebarTitle = getEl<HTMLElement>('fingers-sidebar-title');
+  const tabFingerChannels = getEl<HTMLButtonElement>('tab-finger-channels');
+  const tabFingerFx = getEl<HTMLButtonElement>('tab-finger-fx');
+  const tabFingerMidi = getEl<HTMLButtonElement>('tab-finger-midi');
+  const fingersChannelsToolbar = getEl<HTMLElement>('fingers-channels-toolbar');
+  const fingerFxContainer = getEl<HTMLElement>('finger-fx-panel');
+  const fingerMidiContainer = getEl<HTMLElement>('finger-midi-panel');
+  const fxPanel = new FxPanel(fingerFxContainer, store, audio);
+  const midiPanel = new MidiPanel(fingerMidiContainer, store, webMidi, () => {
+    const s = store.getSettings();
+    chkLiveMidi.checked = s.liveMidiEnabled;
+    selMidiMode.value = s.midiMapMode;
+    refreshMidiSelect(webMidi.listOutputs(s.selectedMidiOutputId));
+  });
+  let activeFingerTab: 'channels' | 'fx' | 'midi' = 'channels';
+
+  function setFingerSidebarTab(tab: 'channels' | 'fx' | 'midi'): void {
+    activeFingerTab = tab;
+    const isFx = tab === 'fx';
+    const isMidi = tab === 'midi';
+    const isChannels = tab === 'channels';
+    tabFingerChannels.classList.toggle('active', isChannels);
+    tabFingerFx.classList.toggle('active', isFx);
+    tabFingerMidi.classList.toggle('active', isMidi);
+    fingersSidebarTitle.textContent = isFx
+      ? 'Mixer & FX Buses'
+      : isMidi
+        ? 'MIDI & DAW Control'
+        : 'Finger channels';
+    fingersChannelsToolbar.classList.toggle('hidden', !isChannels);
+    slotsContainer.classList.toggle('hidden', !isChannels);
+    fingerFxContainer.classList.toggle('hidden', !isFx);
+    fingerMidiContainer.classList.toggle('hidden', !isMidi);
+    workspaceEl?.classList.toggle('fx-wide', isFx && store.getSettings().appMode === 'fingers');
+    if (isFx) {
+      fxPanel.render();
+    } else if (isMidi) {
+      midiPanel.render();
+    }
+  }
+
+  tabFingerChannels.addEventListener('click', () => setFingerSidebarTab('channels'));
+  tabFingerFx.addEventListener('click', () => setFingerSidebarTab('fx'));
+  tabFingerMidi.addEventListener('click', () => setFingerSidebarTab('midi'));
 
   // Theremin & Looper Sidebar Elements
   const selThereminPreset = getEl<HTMLSelectElement>('sel-theremin-preset');
@@ -219,6 +271,7 @@ async function bootstrap(): Promise<void> {
     btnModeTheremin.classList.toggle('active', mode === 'theremin');
     panelFingersMode.classList.toggle('hidden', mode !== 'fingers');
     panelThereminMode.classList.toggle('hidden', mode !== 'theremin');
+    workspaceEl?.classList.toggle('fx-wide', mode === 'fingers' && activeFingerTab === 'fx');
     overlay.setAppMode(mode);
     if (mode === 'fingers') {
       theremin.silence();
@@ -227,7 +280,7 @@ async function bootstrap(): Promise<void> {
     store.emit(
       'statusMessage',
       mode === 'theremin'
-        ? 'Theremin & Looper Mode Active'
+        ? 'Synth & Looper Mode Active'
         : '10-Finger Mode Active'
     );
   }
@@ -685,17 +738,30 @@ async function bootstrap(): Promise<void> {
   });
 
   // Unified NoteOn / NoteOff pipeline
+  function getMidiOutParams(fingerId: FingerId, baseNote: number): { note: number; channel: number; enabled: boolean } {
+    const s = store.getSettings();
+    const enabled = s.midiFingerEnabled?.[fingerId] ?? true;
+    const shift = s.midiMapMode === 'drum' ? 0 : (s.midiOctaveShift || 0) * 12;
+    const note = Math.max(0, Math.min(127, baseNote + shift));
+    const override = s.midiFingerChannels?.[fingerId] ?? 0;
+    const channel = override >= 1 && override <= 16 ? override : (s.midiMapMode === 'drum' ? 10 : s.midiChannel || 1);
+    return { note, channel, enabled };
+  }
+
   store.on('noteOn', ({ fingerId, velocity, timestampMs }) => {
     const slot = store.getSlot(fingerId);
     if (!slot || !slot.enabled) return;
 
-    audio.ensureContext();
-    if (audioHydrated) {
-      audio.trigger(fingerId, velocity);
-    } else {
-      void ensureAudioHydrated().then(() => {
+    const settings = store.getSettings();
+    if (!settings.midiMuteLocalAudio) {
+      audio.ensureContext();
+      if (audioHydrated) {
         audio.trigger(fingerId, velocity);
-      });
+      } else {
+        void ensureAudioHydrated().then(() => {
+          audio.trigger(fingerId, velocity);
+        });
+      }
     }
 
     if (fingerId < 5) {
@@ -704,18 +770,18 @@ async function bootstrap(): Promise<void> {
 
     overlay.triggerHit(fingerId, velocity, timestampMs);
 
-    const settings = store.getSettings();
-    if (midiRecorder.isRecording()) {
+    const midiOut = getMidiOutParams(fingerId, slot.midiNote);
+    if (midiRecorder.isRecording() && midiOut.enabled) {
       midiRecorder.recordNoteOn(
         fingerId,
-        slot.midiNote,
+        midiOut.note,
         velocity,
         audio.getCurrentTime()
       );
     }
 
-    if (settings.liveMidiEnabled) {
-      webMidi.sendNoteOn(slot.midiNote, velocity, settings.midiMapMode === 'drum');
+    if (settings.liveMidiEnabled && midiOut.enabled) {
+      webMidi.sendNoteOn(midiOut.note, velocity, midiOut.channel);
     }
   });
 
@@ -728,7 +794,10 @@ async function bootstrap(): Promise<void> {
       midiRecorder.recordNoteOff(fingerId, audio.getCurrentTime());
     }
     if (settings.liveMidiEnabled && slot) {
-      webMidi.sendNoteOff(slot.midiNote, settings.midiMapMode === 'drum');
+      const midiOut = getMidiOutParams(fingerId, slot.midiNote);
+      if (midiOut.enabled) {
+        webMidi.sendNoteOff(midiOut.note, midiOut.channel);
+      }
     }
   });
 
@@ -793,38 +862,32 @@ async function bootstrap(): Promise<void> {
       lastFrameMs = performance.now();
       let leftLockoutUntilMs = 0;
       let prevPalmL: { x: number; y: number } | null = null;
+      let prevPalmTimeMs = 0;
       let metroZoneArmed = true;
       let lastMetroToggleMs = 0;
       let handGrabbedPadId: number | null = null;
+      let wasLeftResizingPad = false;
       const padInsidePrevFrame = new Set<number>();
       const lastPadTriggerMs = new Map<number, number>();
+      let lastHudFpsText = '';
+      let lastHudHandsText = '';
+      let latestMapped: MappedHandsResult = { fingers: new Map(), rawHands: [] };
 
-      camera.startFrameLoop((nowMs, video) => {
-        // FPS calculation
-        const dt = nowMs - lastFrameMs;
-        lastFrameMs = nowMs;
-        if (dt > 0 && dt < 500) {
-          const instFps = 1000 / dt;
-          fpsSmooth = fpsSmooth === 0 ? instFps : fpsSmooth * 0.88 + instFps * 0.12;
-          hudFps.textContent = `FPS: ${Math.round(fpsSmooth)}`;
+      const processLandmarks = (
+        mpResult: ReturnType<typeof handTracker.detect>,
+        nowMs: number,
+        video: HTMLVideoElement
+      ): void => {
+        const settings = store.getSettings();
+        const mapped = fingerMapper.map(mpResult, nowMs, settings.appMode);
+        latestMapped = mapped;
+        const handsText = `${getStrings(store.getSettings().language).handsPrefix}: ${mapped.rawHands.length}`;
+        if (handsText !== lastHudHandsText) {
+          lastHudHandsText = handsText;
+          hudHands.textContent = handsText;
         }
 
-        const settings = store.getSettings();
-        const mpResult = handTracker.detect(video, nowMs);
-        const mapped = fingerMapper.map(mpResult, nowMs, settings.appMode);
-        hudHands.textContent = `ELLER: ${mapped.rawHands.length}`;
-
         const slots = store.getSlots();
-
-        // 1. AirLooper beat update
-        airLooper.update();
-
-        // 1B. Metronome update & live state
-        const metroState = metronome.update(
-          airLooper.getMasterLoopStartTime(),
-          airLooper.getMasterLoopDuration()
-        );
-        overlay.setMetronomeState(metroState);
 
         // 2. Gesture & Swipe detection (also updates Left-Hand Single-Finger Touch Mode)
         let rightHandDetected = false;
@@ -878,6 +941,7 @@ async function bootstrap(): Promise<void> {
               overlay.showToast('One-hit mode (5 fingers)', '#38bdf8');
             } else {
               handGrabbedPadId = null;
+              wasLeftResizingPad = false;
               overlay.setGrabbedPadId(null);
               overlay.showToast('Theremin mode', '#f8fafc');
             }
@@ -886,7 +950,9 @@ async function bootstrap(): Promise<void> {
           if (handKey === 'L') {
             if (handGrabbedPadId !== null) {
               gestureDetector.cancelLeftPointerToggle();
-              leftLockoutUntilMs = nowMs + 450;
+              if (wasLeftResizingPad) {
+                leftLockoutUntilMs = nowMs + 240;
+              }
             } else if (pointerModeToggled && nowMs >= leftLockoutUntilMs) {
               const isPointer = gestureDetector.isLeftPointerMode();
               overlay.setLeftPointerMode(isPointer);
@@ -899,25 +965,27 @@ async function bootstrap(): Promise<void> {
               metroZoneArmed = !(tip && tip.x <= 0.22 && tip.y <= 0.24);
             }
 
-            if (gestureState.isClosed || gestureState.clenchRatio > 0.38) {
+            if (gestureState.isClosed || gestureState.clenchRatio > 0.62) {
               isLeftClosingPalm = true;
             }
 
             let palmSpeed = 0;
-            if (prevPalmL && dt > 0) {
+            const palmDt = prevPalmTimeMs > 0 ? nowMs - prevPalmTimeMs : 0;
+            if (prevPalmL && palmDt > 0 && palmDt < 300) {
               palmSpeed =
                 Math.hypot(gestureState.palmCenter.x - prevPalmL.x, gestureState.palmCenter.y - prevPalmL.y) /
-                (dt / 1000);
+                (palmDt / 1000);
             }
             prevPalmL = { x: gestureState.palmCenter.x, y: gestureState.palmCenter.y };
+            prevPalmTimeMs = nowMs;
 
             // Only suppress when touching the wall boundary or during rapid gross hand swipe
-            if (gestureState.palmCenter.x <= 0.13 || gestureState.velocityX < -0.80 || palmSpeed > 1.15) {
+            if (gestureState.palmCenter.x <= 0.13 || gestureState.velocityX < -1.10 || palmSpeed > 1.65) {
               isLeftFastMoving = true;
             }
           }
 
-          if (swipe) {
+          if (swipe && settings.appMode === 'theremin') {
             try {
               store.emit('swipeEvent', swipe);
               if (swipe.hand === 'R') {
@@ -993,6 +1061,7 @@ async function bootstrap(): Promise<void> {
               // Right-hand 5-finger One-Hit Pad Control (Drag with right-hand pinch, Resize with left-hand pinch/spread, Play by touching)
               const lms = rawHand.landmarks;
               const vp = overlay.getLastViewport(video);
+              const { handScale: rScale } = gestureDetector.computeHandGeometry(lms);
 
               const thumbTip = lms[4];
               const indexTip = lms[8];
@@ -1000,6 +1069,7 @@ async function bootstrap(): Promise<void> {
                 thumbTip && indexTip
                   ? Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y)
                   : 1;
+              const pinchRatio = pinchDist / Math.max(0.04, rScale);
               const pinchMidX = thumbTip && indexTip ? (thumbTip.x + indexTip.x) * 0.5 : 0.5;
               const pinchMidY = thumbTip && indexTip ? (thumbTip.y + indexTip.y) * 0.5 : 0.5;
 
@@ -1007,11 +1077,12 @@ async function bootstrap(): Promise<void> {
 
               if (handGrabbedPadId !== null) {
                 gestureDetector.cancelRightPadToggle();
-                if (pinchDist < 0.098) {
+                if (pinchRatio < 0.62 && pinchDist < 0.098) {
                   // Dragging pad to the right edge of the camera (pinchMidX >= 0.89) returns it to the dock!
                   if (pinchMidX >= 0.89) {
                     store.updateOneHitPad(handGrabbedPadId, { placed: false });
                     handGrabbedPadId = null;
+                    wasLeftResizingPad = false;
                     overlay.setGrabbedPadId(null);
                     overlay.setOneHitPads(store.getOneHitPads());
                     void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
@@ -1031,6 +1102,7 @@ async function bootstrap(): Promise<void> {
                         leftHandObj.landmarks
                       );
                       if (lPalm.y < 0.86) {
+                        wasLeftResizingPad = true;
                         const lPinchDist = Math.hypot(lThumb.x - lIndex.x, lThumb.y - lIndex.y);
                         const lSpreadRatio = lPinchDist / Math.max(0.04, lScale);
                         // Map lSpreadRatio (0.18 = pinched small -> 0.55x, 0.65 = medium -> 1.0x, 1.30 = spread wide -> 2.3x)
@@ -1050,10 +1122,11 @@ async function bootstrap(): Promise<void> {
                   }
                 } else {
                   handGrabbedPadId = null;
+                  wasLeftResizingPad = false;
                   overlay.setGrabbedPadId(null);
                   void sampleStore.saveOneHitPadsMeta(store.getOneHitPads());
                 }
-              } else if (pinchDist < 0.068) {
+              } else if (pinchRatio < 0.36 && pinchDist < 0.058) {
                 gestureDetector.cancelRightPadToggle();
                 for (let i = currentPads.length - 1; i >= 0; i--) {
                   const pad = currentPads[i];
@@ -1062,10 +1135,11 @@ async function bootstrap(): Promise<void> {
                   const halfNormW = (48 * s) / Math.max(1, vp.drawWidth);
                   const halfNormH = (26 * s) / Math.max(1, vp.drawHeight);
                   if (
-                    Math.abs(pinchMidX - pad.normX) <= halfNormW * 1.25 &&
-                    Math.abs(pinchMidY - pad.normY) <= halfNormH * 1.25
+                    Math.abs(pinchMidX - pad.normX) <= halfNormW * 1.08 &&
+                    Math.abs(pinchMidY - pad.normY) <= halfNormH * 1.08
                   ) {
                     handGrabbedPadId = pad.id;
+                    wasLeftResizingPad = false;
                     overlay.setGrabbedPadId(pad.id);
                     break;
                   }
@@ -1073,7 +1147,7 @@ async function bootstrap(): Promise<void> {
               }
 
               // If not dragging a pad and palm is not closed for mode-toggle, check 5-finger touch on placed pads
-              if (handGrabbedPadId === null && !gestureState.isClosed && gestureState.clenchRatio < 0.42) {
+              if (handGrabbedPadId === null && !gestureState.isClosed && gestureState.clenchRatio < 0.58) {
                 const tipIndices = [4, 8, 12, 16, 20];
                 let hoveredId: number | null = null;
                 for (const pad of currentPads) {
@@ -1100,14 +1174,29 @@ async function bootstrap(): Promise<void> {
                   const wasInside = padInsidePrevFrame.has(pad.id);
                   if (anyFingerInside) {
                     const lastTrig = lastPadTriggerMs.get(pad.id) ?? 0;
-                    if (!wasInside && nowMs - lastTrig > 190) {
+                    if (!wasInside && nowMs - lastTrig > 240) {
                       lastPadTriggerMs.set(pad.id, nowMs);
                       audio.triggerOneHit(pad.id, 0.95);
                       overlay.triggerOneHitFlash(pad.id, nowMs);
                     }
                     padInsidePrevFrame.add(pad.id);
-                  } else {
-                    padInsidePrevFrame.delete(pad.id);
+                  } else if (wasInside) {
+                    // Hysteresis on exit: require all fingertips outside 1.22x bounds to prevent border-jitter double-clicks
+                    let stillNearInside = false;
+                    for (const tIdx of tipIndices) {
+                      const tip = lms[tIdx];
+                      if (!tip) continue;
+                      if (
+                        Math.abs(tip.x - pad.normX) <= halfNormW * 1.22 &&
+                        Math.abs(tip.y - pad.normY) <= halfNormH * 1.22
+                      ) {
+                        stillNearInside = true;
+                        break;
+                      }
+                    }
+                    if (!stillNearInside) {
+                      padInsidePrevFrame.delete(pad.id);
+                    }
                   }
                 }
                 overlay.setHoveredPadId(hoveredId);
@@ -1199,7 +1288,7 @@ async function bootstrap(): Promise<void> {
           handGrabbedPadId !== null ||
           gestureDetector.isLeftPointerMode() ||
           isLeftClosingPalm ||
-          leftSimultaneousTaps >= 3 ||
+          leftSimultaneousTaps >= 4 ||
           isLeftFastMoving ||
           nowMs < leftLockoutUntilMs;
 
@@ -1219,7 +1308,7 @@ async function bootstrap(): Promise<void> {
                     Math.abs(fData.tip.y - pad.normY) <= halfNormH
                   ) {
                     const lastTrig = lastPadTriggerMs.get(pad.id) ?? 0;
-                    if (nowMs - lastTrig > 140) {
+                    if (nowMs - lastTrig > 240 && !padInsidePrevFrame.has(pad.id)) {
                       lastPadTriggerMs.set(pad.id, nowMs);
                       audio.triggerOneHit(pad.id, tap.velocity);
                       overlay.triggerOneHitFlash(pad.id, nowMs);
@@ -1243,18 +1332,71 @@ async function bootstrap(): Promise<void> {
           }
           store.emit('noteOff', rel);
         }
+      };
 
-        overlay.render(mapped, slots, video, nowMs);
+      let needsOverlayRender = true;
+      let lastOverlayRenderMs = 0;
 
-        if (videoRecorder.isRecording()) {
-          videoRecorder.renderFrame(
-            video,
-            overlay,
-            mapped,
-            slots,
-            settings.includeOverlayInVideo,
-            nowMs
-          );
+      // Lightweight audio scheduling + throttled visual loop (never saturates 144Hz GPU!)
+      const renderTick = (nowMs: number) => {
+        if (!camera.isRunning()) return;
+
+        airLooper.update();
+        const metroState = metronome.update(
+          airLooper.getMasterLoopStartTime(),
+          airLooper.getMasterLoopDuration()
+        );
+        overlay.setMetronomeState(metroState);
+
+        // Render at most ~30-60 FPS or immediately when new landmarks arrive
+        if (needsOverlayRender || nowMs - lastOverlayRenderMs >= 32) {
+          needsOverlayRender = false;
+          lastOverlayRenderMs = nowMs;
+          const settings = store.getSettings();
+          const slots = store.getSlots();
+          const video = camera.getVideoElement();
+
+          overlay.render(latestMapped, slots, video, nowMs);
+
+          if (videoRecorder.isRecording()) {
+            videoRecorder.renderFrame(
+              video,
+              overlay,
+              latestMapped,
+              slots,
+              settings.includeOverlayInVideo,
+              nowMs
+            );
+          }
+        }
+
+        requestAnimationFrame(renderTick);
+      };
+      requestAnimationFrame(renderTick);
+
+      camera.startFrameLoop((nowMs, video) => {
+        // Measure actual camera frame rate
+        const dt = nowMs - lastFrameMs;
+        lastFrameMs = nowMs;
+        if (dt > 0 && dt < 500) {
+          const instFps = 1000 / dt;
+          fpsSmooth = fpsSmooth === 0 ? instFps : fpsSmooth * 0.88 + instFps * 0.12;
+          const fpsText = `FPS: ${Math.round(fpsSmooth)}`;
+          if (fpsText !== lastHudFpsText) {
+            lastHudFpsText = fpsText;
+            hudFps.textContent = fpsText;
+          }
+        }
+
+        if (handTracker.isWorkerActive()) {
+          handTracker.detectAsync(video, nowMs, (mpResult, resMs) => {
+            processLandmarks(mpResult, resMs, video);
+            needsOverlayRender = true;
+          });
+        } else {
+          const mpResult = handTracker.detect(video, nowMs);
+          processLandmarks(mpResult, nowMs, video);
+          needsOverlayRender = true;
         }
       });
     } catch (err) {
@@ -1279,7 +1421,7 @@ async function bootstrap(): Promise<void> {
     startOverlay.classList.remove('hidden');
     btnStartHero.disabled = false;
     hudFps.textContent = 'FPS: --';
-    hudHands.textContent = 'ELLER: 0';
+    hudHands.textContent = `${getStrings(store.getSettings().language).handsPrefix}: 0`;
     store.emit('statusMessage', 'Stopped');
   }
 
@@ -1500,35 +1642,66 @@ async function bootstrap(): Promise<void> {
     selMidiOut.disabled = false;
   }
 
+  // Quietly auto-probe DAW MIDI ports on startup
+  if (typeof navigator !== 'undefined' && typeof navigator.requestMIDIAccess === 'function') {
+    void webMidi
+      .init((ports) => {
+        refreshMidiSelect(ports);
+        if (activeFingerTab === 'midi') midiPanel.render();
+      }, initSettings.selectedMidiOutputId)
+      .then((ports) => {
+        refreshMidiSelect(ports);
+        const selId = webMidi.getSelectedOutputId();
+        if (selId && selId !== store.getSettings().selectedMidiOutputId) {
+          store.updateSettings({ selectedMidiOutputId: selId });
+        }
+        chkLiveMidi.checked = store.getSettings().liveMidiEnabled;
+        if (activeFingerTab === 'midi') midiPanel.render();
+      })
+      .catch(() => {
+        // Ignore silent probe failure if browser denies MIDI permission until user click
+      });
+  }
+
   chkLiveMidi.addEventListener('change', async () => {
     if (chkLiveMidi.checked) {
       try {
-        const ports = await webMidi.init(refreshMidiSelect);
+        const ports = await webMidi.init((p) => {
+          refreshMidiSelect(p);
+          if (activeFingerTab === 'midi') midiPanel.render();
+        }, store.getSettings().selectedMidiOutputId);
         refreshMidiSelect(ports);
-        store.updateSettings({ liveMidiEnabled: true });
+        store.updateSettings({
+          liveMidiEnabled: true,
+          selectedMidiOutputId: webMidi.getSelectedOutputId(),
+        });
+        if (activeFingerTab === 'midi') midiPanel.render();
         store.emit(
           'statusMessage',
           ports.length > 0
-            ? `CanlÄ± Web MIDI aktif (${ports.length} port)`
-            : 'Web MIDI aÃ§Ä±k (aktif port bulunamadÄ±, loopMIDI aÃ§abilirsiniz)'
+            ? `Live Web MIDI active (${ports.length} port${ports.length === 1 ? '' : 's'})`
+            : 'Web MIDI enabled (no output port found — open loopMIDI or IAC Driver)'
         );
       } catch (err) {
         chkLiveMidi.checked = false;
         store.updateSettings({ liveMidiEnabled: false });
+        if (activeFingerTab === 'midi') midiPanel.render();
         store.emit(
           'statusMessage',
-          err instanceof Error ? err.message : 'Web MIDI aÃ§Ä±lamadÄ±'
+          err instanceof Error ? err.message : 'Failed to initialize Web MIDI'
         );
       }
     } else {
       store.updateSettings({ liveMidiEnabled: false });
       selMidiOut.disabled = true;
+      if (activeFingerTab === 'midi') midiPanel.render();
     }
   });
 
   selMidiOut.addEventListener('change', () => {
     webMidi.setSelectedOutput(selMidiOut.value);
     store.updateSettings({ selectedMidiOutputId: selMidiOut.value });
+    if (activeFingerTab === 'midi') midiPanel.render();
   });
 
   // Preset Export / Import (Step 9)
@@ -1560,9 +1733,120 @@ async function bootstrap(): Promise<void> {
       store.emit('statusMessage', `"${file.name}" preset yÃ¼klendi!`);
     } catch (err) {
       console.error(err);
-      store.emit('statusMessage', 'GeÃ§ersiz preset dosyasÄ±!');
+      store.emit('statusMessage', 'Invalid preset file!');
     }
   });
+
+  // ===== GENERAL SETTINGS MODAL & MULTI-LANGUAGE =====
+  const btnOpenSettings = getEl<HTMLButtonElement>('btn-open-settings');
+  const settingsModal = getEl<HTMLElement>('settings-modal');
+  const btnDoneSettings = getEl<HTMLButtonElement>('btn-done-settings');
+  const btnResetSettings = getEl<HTMLButtonElement>('btn-reset-settings');
+  const selLanguage = getEl<HTMLSelectElement>('sel-language');
+  const chkSetLandmarks = getEl<HTMLInputElement>('chk-set-landmarks');
+
+  function applySettingsSideEffects(): void {
+    const s = store.getSettings();
+    overlay.setShowLandmarks(s.showLandmarks);
+  }
+
+  function applyLanguage(lang: AppLanguage): void {
+    const t = getStrings(lang);
+
+    document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
+      const key = el.dataset.i18n as keyof I18nStrings;
+      const val = t[key];
+      if (typeof val === 'string') {
+        el.textContent = val;
+      }
+    });
+
+    btnModeFingers.textContent = t.fingerMode;
+    btnModeTheremin.textContent = t.synthLooper;
+    const recOverlayLabel = chkVideoOverlay.closest('label')?.querySelector('span');
+    if (recOverlayLabel) recOverlayLabel.textContent = t.overlay;
+    if (!videoRecorder.isRecording()) {
+      recLabel.textContent = t.record;
+    }
+    btnOpenSettings.title = t.settings;
+    btnOpenSettings.setAttribute('aria-label', t.settings);
+    btnExportPreset.textContent = t.exportPreset;
+    btnImportPreset.textContent = t.importPreset;
+    tabFingerChannels.textContent = t.tabChannels;
+    tabFingerFx.textContent = t.tabFx;
+    tabFingerMidi.textContent = t.tabMidi;
+    fingersSidebarTitle.textContent =
+      activeFingerTab === 'fx'
+        ? t.titleFx
+        : activeFingerTab === 'midi'
+          ? t.titleMidi
+          : t.titleChannels;
+
+    btnToggleCam.textContent = camera.isRunning() ? t.stop : t.start;
+    btnCalibrate.textContent = t.calibrate;
+    const sensSpan = rngSensitivity.closest('label')?.querySelector('span');
+    if (sensSpan && sensSpan.firstChild) sensSpan.firstChild.textContent = `${t.sensitivity} `;
+    const threshSpan = rngVelocity.closest('label')?.querySelector('span');
+    if (threshSpan && threshSpan.firstChild) threshSpan.firstChild.textContent = `${t.threshold} `;
+    const volSpan = rngVolume.closest('label')?.querySelector('span');
+    if (volSpan && volSpan.firstChild) volSpan.firstChild.textContent = `${t.volume} `;
+    const sympSpan = chkSympathy.closest('label')?.querySelector('span');
+    if (sympSpan) sympSpan.textContent = t.antiCrosstalk;
+    const midiSpan = chkLiveMidi.closest('label')?.querySelector('span');
+    if (midiSpan) midiSpan.textContent = t.liveMidi;
+    if (!camera.isRunning()) {
+      hudHands.textContent = `${t.handsPrefix}: 0`;
+    }
+
+    getEl<HTMLElement>('settings-modal-title').textContent = t.settingsTitle;
+    getEl<HTMLElement>('lbl-set-language').textContent = t.languageLabel;
+    getEl<HTMLElement>('lbl-set-landmarks').textContent = t.showLandmarksLabel;
+    btnResetSettings.textContent = t.resetAllSettings;
+    btnDoneSettings.textContent = t.close;
+
+    fingerPanel.renderAll();
+    if (activeFingerTab === 'fx') {
+      fxPanel.render();
+    } else if (activeFingerTab === 'midi') {
+      midiPanel.render();
+    }
+  }
+
+  function syncSettingsModalFromStore(): void {
+    const s = store.getSettings();
+    selLanguage.value = s.language || 'en';
+    chkSetLandmarks.checked = s.showLandmarks ?? true;
+  }
+
+  btnOpenSettings.addEventListener('click', () => {
+    syncSettingsModalFromStore();
+    settingsModal.classList.remove('hidden');
+  });
+
+  const closeSettingsModal = () => settingsModal.classList.add('hidden');
+  btnDoneSettings.addEventListener('click', closeSettingsModal);
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) closeSettingsModal();
+  });
+
+  selLanguage.addEventListener('change', () => {
+    const lang = selLanguage.value as AppLanguage;
+    store.updateSettings({ language: lang });
+    applyLanguage(lang);
+  });
+
+  chkSetLandmarks.addEventListener('change', () => {
+    store.updateSettings({ showLandmarks: chkSetLandmarks.checked });
+    applySettingsSideEffects();
+  });
+
+  btnResetSettings.addEventListener('click', () => {
+    localStorage.removeItem('beatcam_settings_v1');
+    window.location.reload();
+  });
+
+  applySettingsSideEffects();
+  applyLanguage(initSettings.language || 'en');
 }
 
 void bootstrap();
