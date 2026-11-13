@@ -205,8 +205,6 @@ async function bootstrap(): Promise<void> {
   const previewVideo = getEl<HTMLVideoElement>('preview-video');
   const modalInfoDuration = getEl<HTMLElement>('modal-info-duration');
   const modalInfoNotes = getEl<HTMLElement>('modal-info-notes');
-  const inpMidiBpm = getEl<HTMLInputElement>('inp-midi-bpm');
-  const selModalQuantize = getEl<HTMLSelectElement>('sel-modal-quantize');
   const chkMultitrack = getEl<HTMLInputElement>('chk-multitrack');
   const btnDlVideo = getEl<HTMLButtonElement>('btn-dl-video');
   const btnDlMidi = getEl<HTMLButtonElement>('btn-dl-midi');
@@ -225,8 +223,6 @@ async function bootstrap(): Promise<void> {
   selActiveFingers.value = String(initSettings.activeFingerCount);
   selMidiMode.value = initSettings.midiMapMode;
   selQuantize.value = initSettings.quantize;
-  selModalQuantize.value = initSettings.quantize;
-  inpMidiBpm.value = String(initSettings.bpm);
   chkMultitrack.checked = initSettings.multiTrackMidi;
   rngSensitivity.value = String(initSettings.sensitivity);
   valSensitivity.textContent = `${initSettings.sensitivity.toFixed(2)}x`;
@@ -402,7 +398,6 @@ async function bootstrap(): Promise<void> {
     airLooper.setBpm(bpm);
     metronome.setBpm(bpm);
     store.updateSettings({ bpm });
-    inpMidiBpm.value = String(bpm);
   });
 
   btnClearSynthLoop.addEventListener('click', () => {
@@ -461,7 +456,6 @@ async function bootstrap(): Promise<void> {
   store.on('settingsChanged', (s) => {
     selMidiMode.value = s.midiMapMode;
     selQuantize.value = s.quantize;
-    selModalQuantize.value = s.quantize;
   });
 
   // Restore persisted slots & audio buffers (or generate synth defaults)
@@ -1535,11 +1529,11 @@ async function bootstrap(): Promise<void> {
 
   function triggerMidiDownload(): void {
     const settings = store.getSettings();
-    const bpm = Math.max(40, Math.min(240, Number(inpMidiBpm.value) || 120));
-    const quantize = selModalQuantize.value as QuantizeMode;
+    const bpm = Math.max(40, Math.min(240, settings.bpm || 120));
+    const quantize = settings.quantize;
     const multiTrack = chkMultitrack.checked;
 
-    store.updateSettings({ bpm, quantize, multiTrackMidi: multiTrack });
+    store.updateSettings({ multiTrackMidi: multiTrack });
 
     const midiBlob = midiRecorder.buildMidiBlob(store.getSlots(), {
       bpm,

@@ -10,12 +10,12 @@ export interface RecordedVideoResult {
 }
 
 const MIME_CANDIDATES: Array<{ mime: string; ext: 'mp4' | 'webm' }> = [
-  { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
-  { mime: 'video/mp4;codecs=avc1,mp4a', ext: 'mp4' },
-  { mime: 'video/mp4', ext: 'mp4' },
   { mime: 'video/webm;codecs=vp9,opus', ext: 'webm' },
   { mime: 'video/webm;codecs=vp8,opus', ext: 'webm' },
   { mime: 'video/webm', ext: 'webm' },
+  { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
+  { mime: 'video/mp4;codecs=avc1,mp4a', ext: 'mp4' },
+  { mime: 'video/mp4', ext: 'mp4' },
 ];
 
 export class VideoRecorder {
@@ -75,8 +75,11 @@ export class VideoRecorder {
       ? new MediaRecorder(mixedStream, {
           mimeType: picked.mime,
           videoBitsPerSecond: resolution === '720p' ? 4_500_000 : 2_500_000,
+          audioBitsPerSecond: 192_000,
         })
-      : new MediaRecorder(mixedStream);
+      : new MediaRecorder(mixedStream, {
+          audioBitsPerSecond: 192_000,
+        });
 
     this.mediaRecorder.ondataavailable = (ev) => {
       if (ev.data && ev.data.size > 0) {
@@ -86,7 +89,7 @@ export class VideoRecorder {
 
     this.startedAtMs = performance.now();
     this.recording = true;
-    this.mediaRecorder.start(200);
+    this.mediaRecorder.start(1000);
   }
 
   renderFrame(

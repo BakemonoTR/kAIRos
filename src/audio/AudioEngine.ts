@@ -137,9 +137,18 @@ export class AudioEngine {
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.value = this.masterVolume;
 
+      // Safety brickwall limiter so transient peaks never hard-clip MediaStreamAudioDestination
+      const safetyLimiter = this.ctx.createDynamicsCompressor();
+      safetyLimiter.threshold.value = -1.5;
+      safetyLimiter.knee.value = 3;
+      safetyLimiter.ratio.value = 16;
+      safetyLimiter.attack.value = 0.002;
+      safetyLimiter.release.value = 0.08;
+
       this.streamDest = this.ctx.createMediaStreamDestination();
-      this.masterGain.connect(this.ctx.destination);
-      this.masterGain.connect(this.streamDest);
+      this.masterGain.connect(safetyLimiter);
+      safetyLimiter.connect(this.ctx.destination);
+      safetyLimiter.connect(this.streamDest);
 
       this.ensureBusGraph('master');
       if (this.mixerBusesData) {
